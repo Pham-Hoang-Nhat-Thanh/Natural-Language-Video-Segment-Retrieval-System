@@ -1,0 +1,88 @@
+name: Security Scan
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM
+  workflow_dispatch:
+
+jobs:
+  vulnerability-scan:
+    name: Vulnerability Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'table'
+    
+    - name: Run Trivy for Docker images
+      run: |
+        docker build -t test-api-gateway ./services/api-gateway
+        docker build -t test-ingest ./services/ingest  
+        docker build -t test-search ./services/search
+        docker build -t test-frontend ./frontend
+        
+        trivy image test-api-gateway
+        trivy image test-ingest
+        trivy image test-search
+        trivy image test-frontend
+    
+    - name: Python dependency check
+      run: |
+        pip install safety
+        safety check -r services/ingest/requirements.txt
+        safety check -r services/search/requirements.txt
+    
+    - name: Node.js dependency check
+      run: |
+        cd services/api-gateway && npm audit --audit-level high
+        cd ../../frontend && npm audit --audit-level high
+
+  codeql-analysis:
+    name: CodeQL Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+    
+    strategy:
+      fail-fast: false
+      matrix:
+        language: [ 'javascript', 'python' ]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v2
+      with:
+        languages: ${{ matrix.language }}
+    
+    - name: Autobuild
+      uses: github/codeql-action/autobuild@v2
+    
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v2
+
+  secret-scan:
+    name: Secret Scan
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    
+    - name: Run TruffleHog
+      uses: trufflesecurity/trufflehog@main
+      with:
+        path: ./
+        base: main
+        head: HEAD

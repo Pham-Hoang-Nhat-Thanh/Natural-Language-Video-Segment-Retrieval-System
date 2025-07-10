@@ -1,0 +1,89 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: video-retrieval
+  labels:
+    name: video-retrieval
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: video-retrieval
+data:
+  # Database configuration
+  DB_HOST: "postgresql-service"
+  DB_PORT: "5432"
+  DB_NAME: "video_retrieval"
+  
+  # Redis configuration
+  REDIS_HOST: "redis-service"
+  REDIS_PORT: "6379"
+  
+  # Service URLs
+  INGEST_SERVICE_URL: "http://ingest-service:8001"
+  SEARCH_SERVICE_URL: "http://search-service:8002"
+  
+  # Model configuration
+  TEXT_ENCODER_MODEL: "sentence-transformers/all-MiniLM-L6-v2"
+  RERANKER_MODEL: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  
+  # Performance settings
+  MAX_CONCURRENT_REQUESTS: "20"
+  REQUEST_TIMEOUT: "30"
+  
+  # Feature flags
+  RERANKING_ENABLED: "true"
+  BOUNDARY_REGRESSION_ENABLED: "true"
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+  namespace: video-retrieval
+type: Opaque
+data:
+  # Base64 encoded values
+  DB_USER: cG9zdGdyZXM=  # postgres
+  DB_PASSWORD: cG9zdGdyZXM=  # postgres
+  REDIS_PASSWORD: ""
+  JWT_SECRET: eW91ci1qd3Qtc2VjcmV0LWtleQ==  # your-jwt-secret-key
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: video-storage-pvc
+  namespace: video-retrieval
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 100Gi
+  storageClassName: nfs-storage  # Adjust based on your storage class
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: model-storage-pvc
+  namespace: video-retrieval
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 20Gi
+  storageClassName: nfs-storage
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: index-storage-pvc
+  namespace: video-retrieval
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 50Gi
+  storageClassName: fast-ssd  # Fast storage for FAISS index

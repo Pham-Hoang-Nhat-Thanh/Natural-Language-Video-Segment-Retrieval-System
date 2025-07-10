@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  # Test Database
+  test-postgres:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: test_video_retrieval
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  # Test Redis
+  test-redis:
+    image: redis:7-alpine
+    ports:
+      - "6380:6379"
+    tmpfs:
+      - /data
+
+  # API Gateway for testing
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8000:8000"
+    environment:
+      - NODE_ENV=test
+      - INGEST_SERVICE_URL=http://ingest-service:8001
+      - SEARCH_SERVICE_URL=http://search-service:8002
+      - REDIS_URL=redis://test-redis:6379
+      - DATABASE_URL=postgresql://postgres:postgres@test-postgres:5432/test_video_retrieval
+    depends_on:
+      - test-postgres
+      - test-redis
+      - ingest-service
+      - search-service
+
+  # Ingestion Service for testing
+  ingest-service:
+    build:
+      context: ./backend/ingest
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8001:8001"
+    environment:
+      - PYTHONPATH=/app
+      - DATABASE_URL=postgresql://postgres:postgres@test-postgres:5432/test_video_retrieval
+      - REDIS_URL=redis://test-redis:6379
+      - MODEL_PATH=/app/models
+      - DATA_PATH=/tmp/test_data
+    depends_on:
+      - test-postgres
+      - test-redis
+    tmpfs:
+      - /tmp/test_data
+
+  # Search Service for testing
+  search-service:
+    build:
+      context: ./backend/search
+      dockerfile: Dockerfile.dev
+    ports:
+      - "8002:8002"
+    environment:
+      - PYTHONPATH=/app
+      - DATABASE_URL=postgresql://postgres:postgres@test-postgres:5432/test_video_retrieval
+      - REDIS_URL=redis://test-redis:6379
+      - MODEL_PATH=/app/models
+      - DATA_PATH=/tmp/test_data
+      - FAISS_INDEX_PATH=/tmp/test_data/embeddings
+    depends_on:
+      - test-postgres
+      - test-redis
+    tmpfs:
+      - /tmp/test_data
+
+networks:
+  default:
+    driver: bridge

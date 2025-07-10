@@ -1,0 +1,27 @@
+# Custom Dataset Directory
+
+Place your MP4 video files in this directory for processing.
+
+## Usage:
+1. Copy your MP4 files to this directory
+2. Run the ingestion service to process them
+3. Use the frontend to search through your videos
+
+## Supported Formats:
+- MP4 video files
+- Maximum recommended size: 1GB per file
+- Maximum recommended duration: 2 hours
+
+## Example:
+```
+data/videos/datasets/custom/
+├── my_video_1.mp4
+├── my_video_2.mp4
+└── family_vacation.mp4
+```
+
+The system will automatically:
+- Extract keyframes and generate thumbnails
+- Create embeddings for similarity search
+- Store metadata in the database
+- Enable natural language search

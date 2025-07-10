@@ -1,0 +1,24 @@
+# Thumbnail Directory
+
+This directory contains auto-generated thumbnails for your videos.
+
+## Structure:
+```
+data/thumbnails/datasets/custom/
+├── video_1/
+│   ├── thumb_001.jpg
+│   ├── thumb_002.jpg
+│   └── ...
+└── video_2/
+    ├── thumb_001.jpg
+    ├── thumb_002.jpg
+    └── ...
+```
+
+## Auto-Generated Content:
+- Thumbnails are automatically created during video processing
+- Each video gets its own subdirectory
+- Thumbnails are used for search result previews
+- Files are automatically managed by the system
+
+**Note**: This directory is auto-generated. Do not manually place files here.
