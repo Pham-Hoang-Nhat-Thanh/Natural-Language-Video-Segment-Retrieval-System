@@ -1,4 +1,6 @@
-# Na## 🚀 Quick Start
+# Natural Language Video Segment Retrieval System
+
+## 🚀 Quick Start
 
 ### Prerequisites
 - Docker and Docker Compose
@@ -7,20 +9,22 @@
 
 ### Environment Setup
 
-1. **Clone and Setup**
+1. **Clone and setup**
 ```bash
-git clone <repository-url>
-cd video-segment-retrieval
-
-# Copy environment files
-cp .env.example .env
-cp frontend/.env.example frontend/.env.local
-cp backend/api-gateway/.env.example backend/api-gateway/.env
-cp backend/ingest/.env.example backend/ingest/.env
-cp backend/search/.env.example backend/search/.env
-
-# Customize environment variables as needed
+   git clone <repository-url>
+   cd video-segment-retrieval
 ```
+
+2. Copy the example environment files:
+```bash
+   cp .env.example .env
+   cp frontend/.env.example frontend/.env.local
+   cp backend/api-gateway/.env.example backend/api-gateway/.env
+   cp backend/ingest/.env.example backend/ingest/.env
+   cp backend/search/.env.example backend/search/.env
+```
+
+3. Customize the environment variables as needed
 
 2. **Start with Docker (Recommended)**
 ```bash
@@ -41,7 +45,7 @@ docker-compose logs -f
 - Grafana: http://localhost:3001 (admin/admin123)
 - Prometheus: http://localhost:9090
 
-### Manual Development Setupen Video Segment Retrieval
+### Manual Development Setup
 
 A high-performance, full-stack application for retrieving precise video segments using natural language queries with <50ms end-to-end latency.
 
@@ -282,12 +286,7 @@ This implementation provides:
 4. Ensure all tests pass
 5. Submit a pull request
 
-## 📄 License
-
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-Perfect for:
-- Learning video search concepts
+##
 ## 🎯 Use Cases
 
 This system is ideal for:

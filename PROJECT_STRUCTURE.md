@@ -1,106 +1,36 @@
-# Natural Language-Driven Video Segment Retrieval - Project Structure
+# Project Structure
 
-## Overview
-Production-ready, full-stack application for natural language video segment retrieval with <50ms query latency, built with modern microservices architecture and ML-powered search capabilities.
+This document describes the layout of the Natural Language Video Segment Retrieval System, outlining key directories and files.
 
-## Repository Structure
+## Repository Layout
 
 ```
 /
-├── README.md                          # Main project documentation
-├── IMPLEMENTATION_SUMMARY.md          # Complete implementation overview
-├── PROJECT_STRUCTURE.md              # This file
-├── docker-compose.yml                # Complete development environment
-├── setup.sh / setup.bat              # Cross-platform setup scripts
-├── .github/
-│   └── workflows/                     # CI/CD pipelines
-│       ├── ci-cd.yml                 # Main CI/CD pipeline
-│       └── security.yml              # Security scanning
-├── frontend/                          # Next.js 14 frontend application
-│   ├── app/                          # Next.js App Router
-│   │   ├── globals.css               # Global styles
-│   │   ├── layout.tsx                # Root layout
-│   │   ├── page.tsx                  # Main search page
-│   │   ├── manage/                   # Video management interface
-│   │   └── admin/                    # Admin dashboard
-│   ├── components/                    # React components
-│   │   ├── Header.tsx                # Site header
-│   │   ├── SearchInterface.tsx       # Main search interface
-│   │   ├── SearchBar.tsx            # Search input component
-│   │   ├── ResultsList.tsx          # Search results display
-│   │   └── VideoPlayer.tsx          # Video player with segments
-│   ├── lib/                          # Utility functions
-│   │   ├── api.ts                    # API client
-│   │   └── utils.ts                  # Helper functions
-│   ├── types/                        # TypeScript definitions
-│   │   └── index.ts                  # Shared type definitions
-│   ├── package.json
-│   ├── next.config.js
-│   └── tailwind.config.js
-├── backend/                           # Backend microservices
-│   ├── api-gateway/                   # Node.js API Gateway (Fastify)
-│   │   ├── src/
-│   │   │   └── app.js                # Main gateway application
-│   │   ├── package.json
-│   │   ├── Dockerfile
-│   │   └── Dockerfile.dev
-│   ├── ingest/                        # Python video ingestion service
-│   │   ├── main.py                   # FastAPI ingestion service
-│   │   ├── shot_detector.py          # Shot boundary detection
-│   │   ├── keyframe_extractor.py     # Keyframe extraction
-│   │   ├── embedding_service.py      # Multimodal embeddings
-│   │   ├── config.py                 # Configuration management
-│   │   ├── database.py               # Database operations
-│   │   ├── requirements.txt
-│   │   └── Dockerfile
-│   └── search/                        # Python search service
-│       ├── main.py                   # FastAPI search service
-│       ├── text_encoder.py           # Text encoding with caching
-│       ├── ann_search.py             # FAISS ANN search engine
-│       ├── reranker.py               # Cross-encoder reranking
-│       ├── boundary_regressor.py     # Neural boundary refinement
-│       ├── database.py               # Search database operations
-│       ├── config.py                 # Configuration management
-│       ├── requirements.txt
-│       ├── Dockerfile
-│       └── Dockerfile.dev
-├── models/                            # ML models and configurations
-│   ├── clip/                          # CLIP model files
-│   ├── reranker/                      # Cross-encoder model
-│   ├── regressor/                     # Boundary regression model
-│   └── onnx/                          # ONNX optimized models
-├── infra/                             # Infrastructure and deployment
-│   ├── k8s/                           # Kubernetes manifests
-│   │   ├── 00-namespace-config.yml    # Namespace and RBAC
-│   │   ├── 01-frontend-api.yml        # Frontend and API Gateway
-│   │   ├── 02-ml-services.yml         # ML microservices
-│   │   ├── 03-infrastructure.yml      # Database, Redis, Storage
-│   │   └── 04-monitoring.yml          # Monitoring stack
-│   ├── helm/                          # Helm charts
-│   ├── terraform/                     # Infrastructure as code
-│   └── monitoring/                    # Prometheus, Grafana configs
-├── data/                              # Optimized storage architecture
-│   ├── videos/                        # Video storage (bandwidth optimized)
-│   │   ├── datasets/                 # Pre-built datasets (READ-ONLY)
-│   │   │   └── custom/              # User's MP4 files (manually added)
-│   ├── thumbnails/                   # Generated keyframe thumbnails
-│   │   └── datasets/                # Thumbnails organized by dataset
-│   │       └── custom/              # Thumbnails for user's videos
-│   ├── embeddings/                   # FAISS vector indices (fast access)
-│   │   └── custom.faiss             # Index for user videos
-│   ├── metadata/                     # Video metadata and processing results
-│   │   └── custom/                  # Processing metadata for user videos
-│   ├── cache/                        # Local performance cache
-│   ├── README.md                     # Data directory documentation
-│   └── STORAGE_ARCHITECTURE.md      # Technical storage details
-├── tests/                             # Test suites
-│   ├── unit/                          # Unit tests
-│   ├── integration/                   # Integration tests
-│   └── load/                          # Load testing (k6)
-└── docs/                              # Documentation
-    ├── api/                           # API documentation
-    ├── architecture/                  # Architecture diagrams
-    └── deployment/                    # Deployment guides
+├── README.md                   # Main project documentation
+├── USER_GUIDE.md               # Detailed user guide for manual workflow
+├── PROJECT_STRUCTURE.md        # This file: project layout overview
+├── IMPLEMENTATION_SUMMARY.md   # Summary of implementation details and design
+├── CLEANUP_SUMMARY.md          # Summary of refactoring and cleanup steps
+├── GITHUB_UPLOAD_GUIDE.md      # Instructions to upload the project to GitHub
+├── SYSTEM_VERIFICATION.md      # Report on final system verification
+├── STORAGE_ARCHITECTURE.md     # Storage architecture and data flow
+├── docker-compose.yml          # Docker Compose configuration for all services
+├── setup.sh                    # Shell setup script (Linux/Mac)
+├── setup.bat                   # Batch setup script (Windows)
+├── frontend/                   # Next.js frontend application
+│   ├── components/             # React components for UI
+│   ├── lib/                    # Client API helpers and utilities
+│   ├── types/                  # TypeScript type definitions
+│   ├── .env.example            # Example env file for frontend
+│   └── ...                     # Other frontend files
+├── backend/                    # Backend microservices (FastAPI, Node.js)
+│   ├── api-gateway/            # Node.js API Gateway (Fastify)
+│   │   └── src/app.js          # Main gateway application
+│   ├── ingest/                 # Video ingestion service (FastAPI)
+│   │   └── main.py             # Ingestion entry point
+│   └── search/                 # Video search service (FastAPI)
+│       └── main.py             # Search entry point
+└── data/                       # Data storage (videos, thumbnails, metadata, embeddings)
 ```
 
 ## Technology Stack
