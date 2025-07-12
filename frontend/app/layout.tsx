@@ -1,4 +1,5 @@
 import React from 'react'
+import Link from 'next/link'
 import './globals.css'
 
 export default function RootLayout({
@@ -14,6 +15,13 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </head>
       <body className="antialiased">
+        <header className="bg-gray-800 text-white p-4">
+          <nav className="max-w-7xl mx-auto flex space-x-4">
+            <Link href="/">Search</Link>
+            <Link href="/videos">Videos</Link>
+            <Link href="/admin">Admin</Link>
+          </nav>
+        </header>
         {children}
       </body>
     </html>
