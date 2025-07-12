@@ -112,25 +112,124 @@ EOL
     fi
 }
 
-# Download sample models (placeholder)
+# Download and setup ML models automatically
 download_models() {
-    print_status "Setting up ML models..."
+    print_status "Setting up ML models with automated download..."
     
-    # In a real implementation, you would download pre-trained models here
-    # For now, we'll create placeholder files
-    
+    # Create models directory
     mkdir -p models/clip
     mkdir -p models/onnx
     mkdir -p models/reranker
     mkdir -p models/regressor
+    mkdir -p scripts
     
-    # Create model placeholders
-    echo "# CLIP model will be downloaded automatically on first run" > models/clip/README.md
-    echo "# ONNX models will be generated from PyTorch models" > models/onnx/README.md
-    echo "# Cross-encoder reranker model" > models/reranker/README.md
-    echo "# Boundary regression model" > models/regressor/README.md
+    # Check if automated download script exists
+    if [ -f "scripts/download_models.py" ]; then
+        print_status "Running automated model download script..."
+        
+        # Install Python dependencies for model download
+        python3 -m pip install torch torchvision clip-by-openai sentence-transformers onnx onnxruntime numpy
+        
+        # Run the automated download
+        cd "$(dirname "$0")"
+        python3 scripts/download_models.py --models-dir models
+        
+        if [ $? -eq 0 ]; then
+            print_success "✅ Automated model download completed"
+        else
+            print_error "❌ Automated model download failed, falling back to manual setup"
+            manual_model_setup
+        fi
+    else
+        print_warning "Automated download script not found, using manual setup"
+        manual_model_setup
+    fi
+}
+
+# Fallback manual model setup
+manual_model_setup() {
+    print_status "Setting up model directories manually..."
     
-    print_success "Model directories prepared"
+    # Create model placeholders with improved instructions
+    cat > models/clip/README.md << EOL
+# CLIP Models
+
+## Automated Setup (Recommended)
+Run: \`python3 scripts/download_models.py --clip-only\`
+
+## Manual Setup
+CLIP models will be downloaded automatically on first run via the clip library.
+PyTorch models are cached in ~/.cache/clip/
+
+## Available Models
+- ViT-B/32 (default)
+- ViT-B/16 (higher accuracy)
+- RN50 (ResNet-based)
+
+## ONNX Models
+ONNX versions will be generated automatically for faster inference.
+EOL
+
+    cat > models/onnx/README.md << EOL
+# ONNX Models
+
+## Automated Setup (Recommended)
+Run: \`python3 scripts/download_models.py\` to generate ONNX models from PyTorch CLIP models.
+
+## Manual Setup
+1. Install onnx: \`pip install onnx onnxruntime\`
+2. Run conversion script or use automated downloader
+3. ONNX models provide faster inference than PyTorch models
+
+## Generated Files
+- clip_ViT-B_32_text_encoder.onnx
+- clip_ViT-B_32_image_encoder.onnx
+EOL
+
+    cat > models/reranker/README.md << EOL
+# Cross-Encoder Reranker Models
+
+## Automated Setup (Recommended)
+Run: \`python3 scripts/download_models.py --reranker-only\`
+
+## Manual Setup
+Models download automatically via sentence-transformers library.
+
+## Available Models
+- cross-encoder/ms-marco-MiniLM-L-6-v2 (default, fast)
+- cross-encoder/ms-marco-TinyBERT-L-2-v2 (smaller, faster)
+
+## Usage
+Models are cached in ~/.cache/huggingface/transformers/
+EOL
+
+    cat > models/regressor/README.md << EOL
+# Boundary Regression Model
+
+## Automated Setup (Recommended)
+Run: \`python3 scripts/download_models.py --regressor-only\`
+
+This will create:
+- Pre-trained sample weights (boundary_regressor_pretrained.pth)
+- Training script (train_boundary_regressor.py)
+- Sample training data format
+
+## Manual Setup
+1. Train your own model using the training script
+2. Place trained weights as boundary_regressor_pretrained.pth
+
+## Training Your Model
+\`\`\`bash
+cd models/regressor
+python train_boundary_regressor.py your_training_data.json your_model.pth
+\`\`\`
+
+## Note
+Without pre-trained weights, the system uses random initialization.
+Use the automated setup to get sample weights for better performance.
+EOL
+    
+    print_success "Model directories prepared with setup instructions"
 }
 
 # Initialize database
@@ -166,6 +265,111 @@ CREATE EXTENSION IF NOT EXISTS "pg_trgm";
 EOL
 
     print_success "Database initialization script created"
+    
+    # Add database health monitoring
+    print_status "Setting up database health monitoring..."
+    
+    cat > scripts/check_database_health.sh << 'EOL'
+#!/bin/bash
+# Database Health Check Script
+# Usage: ./scripts/check_database_health.sh [--fix]
+
+DATABASE_URL="${DATABASE_URL:-postgresql://postgres:password@localhost:5432/video_retrieval}"
+FIX_ISSUES=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --fix)
+            FIX_ISSUES=true
+            shift
+            ;;
+        --database-url)
+            DATABASE_URL="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--fix] [--database-url URL]"
+            exit 1
+            ;;
+    esac
+done
+
+echo "🔍 Running database health check..."
+echo "Database URL: $DATABASE_URL"
+
+# Check if Python dependencies are available
+if ! python3 -c "import asyncpg" 2>/dev/null; then
+    echo "Installing required Python packages..."
+    pip3 install asyncpg
+fi
+
+# Run health check
+if [ "$FIX_ISSUES" = true ]; then
+    echo "🔧 Running health check with automatic fixes..."
+    python3 scripts/database_health_monitor.py --database-url "$DATABASE_URL" --fix
+else
+    echo "🔍 Running health check (read-only)..."
+    python3 scripts/database_health_monitor.py --database-url "$DATABASE_URL"
+fi
+
+echo "✅ Database health check completed"
+EOL
+
+    chmod +x scripts/check_database_health.sh
+    
+    cat > scripts/migrate_database.sh << 'EOL'
+#!/bin/bash
+# Database Migration Script
+# Usage: ./scripts/migrate_database.sh [--dry-run]
+
+DATABASE_URL="${DATABASE_URL:-postgresql://postgres:password@localhost:5432/video_retrieval}"
+DRY_RUN=false
+
+# Parse arguments
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --dry-run)
+            DRY_RUN=true
+            shift
+            ;;
+        --database-url)
+            DATABASE_URL="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            echo "Usage: $0 [--dry-run] [--database-url URL]"
+            exit 1
+            ;;
+    esac
+done
+
+echo "🔧 Running database migration..."
+echo "Database URL: $DATABASE_URL"
+
+# Check if Python dependencies are available
+if ! python3 -c "import asyncpg" 2>/dev/null; then
+    echo "Installing required Python packages..."
+    pip3 install asyncpg
+fi
+
+# Run migration
+if [ "$DRY_RUN" = true ]; then
+    echo "🔍 Running migration in dry-run mode..."
+    python3 scripts/database_migration.py --database-url "$DATABASE_URL" --dry-run
+else
+    echo "🔧 Running migration..."
+    python3 scripts/database_migration.py --database-url "$DATABASE_URL"
+fi
+
+echo "✅ Database migration completed"
+EOL
+
+    chmod +x scripts/migrate_database.sh
+    
+    print_success "Database health monitoring scripts created"
 }
 
 # Create monitoring configuration

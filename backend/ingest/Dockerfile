@@ -28,8 +28,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy source code
 COPY . .
 
+# Copy model setup scripts from parent directory
+COPY ../../scripts/download_models.py /app/scripts/download_models.py
+COPY ../../scripts/requirements_models.txt /app/scripts/requirements_models.txt
+COPY ../../scripts/setup_models_docker.sh /app/scripts/setup_models_docker.sh
+
 # Create directories for models and data
-RUN mkdir -p /app/models /app/data
+RUN mkdir -p /app/models /app/data /app/scripts
+
+# Setup ML models automatically during build
+RUN chmod +x /app/scripts/setup_models_docker.sh && \
+    /app/scripts/setup_models_docker.sh
 
 # Create non-root user
 RUN useradd --create-home --shell /bin/bash ingest

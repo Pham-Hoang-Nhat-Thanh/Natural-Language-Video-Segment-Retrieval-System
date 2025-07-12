@@ -88,13 +88,22 @@ class EmbeddingService:
             raise
     
     def _onnx_model_exists(self) -> bool:
-        """Check if ONNX model files exist"""
+        """Check if ONNX model files exist (new automated format)"""
+        # Check for new automated ONNX format
+        model_prefix = f"clip_{self.model_name.replace('/', '_')}"
+        text_onnx_path = self.model_path / "onnx" / f"{model_prefix}_text_encoder.onnx"
+        image_onnx_path = self.model_path / "onnx" / f"{model_prefix}_image_encoder.onnx"
+        
+        if text_onnx_path.exists() and image_onnx_path.exists():
+            return True
+        
+        # Fallback to old naming convention
         onnx_path = self.model_path / "onnx" / "visual_encoder.onnx"
         text_onnx_path = self.model_path / "onnx" / "text_encoder.onnx"
         return onnx_path.exists() and text_onnx_path.exists()
     
     async def _load_onnx_model(self):
-        """Load ONNX optimized model"""
+        """Load ONNX optimized model (supports new automated format)"""
         logger.info("Loading ONNX model...")
         
         # ONNX Runtime providers
@@ -103,13 +112,22 @@ class EmbeddingService:
             providers.append("CUDAExecutionProvider")
         providers.append("CPUExecutionProvider")
         
-        # Load visual encoder
-        visual_model_path = self.model_path / "onnx" / "visual_encoder.onnx"
-        self.visual_session = ort.InferenceSession(str(visual_model_path), providers=providers)
+        # Try new automated format first
+        model_prefix = f"clip_{self.model_name.replace('/', '_')}"
+        text_model_path = self.model_path / "onnx" / f"{model_prefix}_text_encoder.onnx"
+        image_model_path = self.model_path / "onnx" / f"{model_prefix}_image_encoder.onnx"
         
-        # Load text encoder
-        text_model_path = self.model_path / "onnx" / "text_encoder.onnx"
-        self.text_session = ort.InferenceSession(str(text_model_path), providers=providers)
+        if text_model_path.exists() and image_model_path.exists():
+            logger.info("Using automated ONNX models...")
+            self.text_session = ort.InferenceSession(str(text_model_path), providers=providers)
+            self.visual_session = ort.InferenceSession(str(image_model_path), providers=providers)
+        else:
+            # Fallback to old naming convention
+            logger.info("Using legacy ONNX models...")
+            visual_model_path = self.model_path / "onnx" / "visual_encoder.onnx"
+            text_model_path = self.model_path / "onnx" / "text_encoder.onnx"
+            self.visual_session = ort.InferenceSession(str(visual_model_path), providers=providers)
+            self.text_session = ort.InferenceSession(str(text_model_path), providers=providers)
         
         # Load tokenizer
         tokenizer_path = self.model_path / "tokenizer.json"

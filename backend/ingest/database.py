@@ -2,6 +2,7 @@ import asyncpg
 import redis.asyncio as redis
 import json
 import numpy as np
+import asyncio
 from typing import List, Dict, Optional, Any
 import logging
 from datetime import datetime, timezone
@@ -27,27 +28,42 @@ class DatabaseManager:
         self.redis_client = None
     
     async def connect(self):
-        """Initialize database connections"""
-        try:
-            # PostgreSQL connection pool
-            self.pg_pool = await asyncpg.create_pool(
-                self.database_url,
-                min_size=2,
-                max_size=10,
-                command_timeout=60
-            )
-            
-            # Redis connection
-            self.redis_client = redis.from_url(self.redis_url)
-            
-            # Create tables if they don't exist
-            await self._create_tables()
-            
-            logger.info("Database connections established")
-            
-        except Exception as e:
-            logger.error(f"Failed to connect to databases: {e}")
-            raise
+        """Initialize database connections with retry logic"""
+        max_retries = 5
+        retry_delay = 2  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                # PostgreSQL connection pool
+                self.pg_pool = await asyncpg.create_pool(
+                    self.database_url,
+                    min_size=2,
+                    max_size=10,
+                    command_timeout=60
+                )
+                
+                # Redis connection
+                self.redis_client = redis.from_url(self.redis_url)
+                
+                # Test connections
+                async with self.pg_pool.acquire() as conn:
+                    await conn.fetchval("SELECT 1")
+                
+                # Create tables if they don't exist
+                await self._create_tables()
+                
+                logger.info(f"Database connections established successfully on attempt {attempt + 1}")
+                return
+                
+            except Exception as e:
+                logger.warning(f"Database connection attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error(f"Failed to connect to databases after {max_retries} attempts")
+                    raise
     
     async def disconnect(self):
         """Close database connections"""
@@ -117,7 +133,8 @@ class DatabaseManager:
             embedding_dimension INTEGER NOT NULL,
             embedding_vector BYTEA NOT NULL,  -- Stored as binary
             norm FLOAT,
-            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+            created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+            UNIQUE(keyframe_id, model_name)  -- Allow one embedding per model per keyframe
         );
         
         -- Processing statistics table
@@ -289,6 +306,12 @@ class DatabaseManager:
                 INSERT INTO embeddings (
                     keyframe_id, model_name, embedding_dimension, embedding_vector, norm
                 ) VALUES ($1, $2, $3, $4, $5)
+                ON CONFLICT (keyframe_id) DO UPDATE SET
+                    model_name = EXCLUDED.model_name,
+                    embedding_dimension = EXCLUDED.embedding_dimension,
+                    embedding_vector = EXCLUDED.embedding_vector,
+                    norm = EXCLUDED.norm,
+                    created_at = NOW()
             """,
                 embedding.keyframe_id, embedding.model_name,
                 embedding.dimension, embedding_bytes, norm
@@ -423,3 +446,199 @@ class DatabaseManager:
                 'total_keyframes': keyframe_stats['total_keyframes'],
                 'avg_processing_time': float(processing_stats['avg_processing_time'] or 0)
             }
+    
+    async def health_check(self) -> bool:
+        """Check if database connection is healthy"""
+        try:
+            async with self.pg_pool.acquire() as conn:
+                result = await conn.fetchval("SELECT 1")
+                return result == 1
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            return False
+    
+    async def get_video_status(self, video_id: str):
+        """Get processing status for a video"""
+        try:
+            async with self.pg_pool.acquire() as conn:
+                result = await conn.fetchrow(
+                    "SELECT * FROM videos WHERE video_id = $1", video_id
+                )
+                if not result:
+                    return None
+                
+                return {
+                    "video_id": video_id,
+                    "processed": result['processing_end_time'] is not None,
+                    "shots_count": await conn.fetchval(
+                        "SELECT COUNT(*) FROM shots WHERE video_id = $1", video_id
+                    ),
+                    "keyframes_count": await conn.fetchval(
+                        "SELECT COUNT(*) FROM keyframes WHERE video_id = $1", video_id
+                    ),
+                    "embeddings_count": await conn.fetchval(
+                        "SELECT COUNT(*) FROM embeddings WHERE video_id = $1", video_id
+                    ),
+                    "processed_at": result['processing_end_time'].isoformat() if result['processing_end_time'] else None
+                }
+        except Exception as e:
+            logger.error(f"Failed to get video status: {e}")
+            return None
+
+    async def store_video_data(self, video_id: str, shots: list, keyframes: list, embeddings: list, video_metadata: dict = None):
+        """Store video processing data"""
+        try:
+            async with self.pg_pool.acquire() as conn:
+                # Store video metadata
+                await conn.execute("""
+                    INSERT INTO videos (video_id, filename, file_path, file_size_bytes, duration_seconds, fps, width, height, format, status, processing_start_time, created_at, updated_at)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'processing', NOW(), NOW(), NOW())
+                    ON CONFLICT (video_id) DO UPDATE SET
+                        filename = EXCLUDED.filename,
+                        file_path = EXCLUDED.file_path,
+                        file_size_bytes = EXCLUDED.file_size_bytes,
+                        duration_seconds = EXCLUDED.duration_seconds,
+                        fps = EXCLUDED.fps,
+                        width = EXCLUDED.width,
+                        height = EXCLUDED.height,
+                        format = EXCLUDED.format,
+                        updated_at = NOW()
+                """, 
+                    video_id,
+                    video_metadata.get('filename', f"{video_id}.mp4") if video_metadata else f"{video_id}.mp4",
+                    video_metadata.get('file_path') if video_metadata else None,
+                    video_metadata.get('file_size_bytes', 0) if video_metadata else 0,
+                    video_metadata.get('duration_seconds', 0.0) if video_metadata else 0.0,
+                    video_metadata.get('fps', 0.0) if video_metadata else 0.0,
+                    video_metadata.get('width', 0) if video_metadata else 0,
+                    video_metadata.get('height', 0) if video_metadata else 0,
+                    video_metadata.get('format', 'unknown') if video_metadata else 'unknown'
+                )
+                
+                # Store shots
+                for i, shot in enumerate(shots):
+                    shot_result = await conn.fetchrow("""
+                        INSERT INTO shots (video_id, shot_index, start_frame, end_frame, start_time, end_time, confidence, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+                        ON CONFLICT (video_id, shot_index) DO UPDATE SET
+                            start_frame = EXCLUDED.start_frame,
+                            end_frame = EXCLUDED.end_frame,
+                            start_time = EXCLUDED.start_time,
+                            end_time = EXCLUDED.end_time,
+                            confidence = EXCLUDED.confidence
+                        RETURNING shot_id
+                    """, video_id, i, shot.get('start_frame', 0), shot.get('end_frame', 0), 
+                        shot.get('start_time', 0), shot.get('end_time', 0), shot.get('confidence', 0.0))
+                    
+                    # Store shot_id for keyframe references
+                    if shot_result:
+                        shot_db_id = shot_result['shot_id']
+                    else:
+                        # Get existing shot_id if update occurred
+                        shot_db_id = await conn.fetchval(
+                            "SELECT shot_id FROM shots WHERE video_id = $1 AND shot_index = $2",
+                            video_id, i
+                        )
+                
+                # Store keyframes and embeddings
+                shot_id_map = {}  # Map shot_index to database shot_id
+                
+                for i, (keyframe, embedding) in enumerate(zip(keyframes, embeddings)):
+                    keyframe_id = f"{video_id}_keyframe_{i}"
+                    shot_index = keyframe.get('shot_index', 0)
+                    
+                    # Get the actual database shot_id
+                    if shot_index not in shot_id_map:
+                        shot_db_id = await conn.fetchval(
+                            "SELECT shot_id FROM shots WHERE video_id = $1 AND shot_index = $2",
+                            video_id, shot_index
+                        )
+                        shot_id_map[shot_index] = shot_db_id
+                    else:
+                        shot_db_id = shot_id_map[shot_index]
+                    
+                    if not shot_db_id:
+                        logger.warning(f"No shot found for video {video_id}, shot_index {shot_index}")
+                        continue
+                    
+                    await conn.execute("""
+                        INSERT INTO keyframes (keyframe_id, video_id, shot_id, frame_number, timestamp, image_path, created_at)
+                        VALUES ($1, $2, $3, $4, $5, $6, NOW())
+                        ON CONFLICT (keyframe_id) DO UPDATE SET
+                            shot_id = EXCLUDED.shot_id,
+                            frame_number = EXCLUDED.frame_number,
+                            timestamp = EXCLUDED.timestamp,
+                            image_path = EXCLUDED.image_path
+                    """, keyframe_id, video_id, shot_db_id, keyframe.get('frame_number', 0), keyframe.get('timestamp', 0), 
+                        keyframe.get('image_path'))
+                    
+                    await conn.execute("""
+                        INSERT INTO embeddings (keyframe_id, model_name, embedding_dimension, embedding_vector, norm, created_at)
+                        VALUES ($1, $2, $3, $4, $5, NOW())
+                        ON CONFLICT (keyframe_id, model_name) DO UPDATE SET
+                            embedding_dimension = EXCLUDED.embedding_dimension,
+                            embedding_vector = EXCLUDED.embedding_vector,
+                            norm = EXCLUDED.norm
+                    """, keyframe_id, embedding.model_name, embedding.dimension, 
+                        embedding.embedding.astype(np.float32).tobytes(), float(np.linalg.norm(embedding.embedding)))
+                
+                # Update video status
+                await conn.execute(
+                    "UPDATE videos SET status = 'completed', processing_end_time = NOW() WHERE video_id = $1",
+                    video_id
+                )
+    
+            # Cache embeddings in Redis for fast retrieval
+            await self._cache_embeddings(video_id, embeddings)
+            
+            logger.info(f"Successfully stored data for video: {video_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"Failed to store video data for {video_id}: {e}")
+            # Update video status to failed
+            try:
+                async with self.pg_pool.acquire() as conn:
+                    await conn.execute(
+                        "UPDATE videos SET status = 'failed', error_message = $1 WHERE video_id = $2",
+                        str(e), video_id
+                    )
+            except:
+                pass
+            return False
+
+    async def delete_video(self, video_id: str):
+        """Delete video data from database"""
+        try:
+            async with self.pg_pool.acquire() as conn:
+                await conn.execute("DELETE FROM videos WHERE video_id = $1", video_id)
+            
+            # Remove from Redis cache
+            cache_key = f"embeddings:{video_id}"
+            await self.redis_client.delete(cache_key)
+            
+            logger.info(f"Deleted video data for {video_id}")
+        except Exception as e:
+            logger.error(f"Failed to delete video data: {e}")
+            raise
+
+    async def get_ingestion_stats(self):
+        """Get ingestion service statistics"""
+        try:
+            async with self.pg_pool.acquire() as conn:
+                total_videos = await conn.fetchval("SELECT COUNT(*) FROM videos")
+                processed_videos = await conn.fetchval(
+                    "SELECT COUNT(*) FROM videos WHERE processing_end_time IS NOT NULL"
+                )
+                total_shots = await conn.fetchval("SELECT COUNT(*) FROM shots")
+                total_keyframes = await conn.fetchval("SELECT COUNT(*) FROM keyframes")
+                
+                return {
+                    "total_videos": total_videos,
+                    "processed_videos": processed_videos,
+                    "total_shots": total_shots,
+                    "total_keyframes": total_keyframes
+                }
+        except Exception as e:
+            logger.error(f"Failed to get ingestion stats: {e}")
+            return {}

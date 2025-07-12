@@ -8,6 +8,7 @@ import asyncio
 import logging
 from typing import List, Dict, Any, Optional, Tuple
 import json
+import numpy as np
 import time
 from datetime import datetime, timedelta
 from config import Settings
@@ -30,22 +31,38 @@ class SearchDatabase:
         )
     
     async def connect(self):
-        """Initialize database connection pool."""
-        try:
-            self.pool = await asyncpg.create_pool(
-                self.connection_string,
-                min_size=2,
-                max_size=10,
-                command_timeout=30
-            )
-            logger.info("Connected to search database")
-            
-            # Initialize schema if needed
-            await self._initialize_schema()
-            
-        except Exception as e:
-            logger.error(f"Failed to connect to database: {e}")
-            raise
+        """Initialize database connection pool with retry logic."""
+        max_retries = 5
+        retry_delay = 2  # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                self.pool = await asyncpg.create_pool(
+                    self.connection_string,
+                    min_size=2,
+                    max_size=10,
+                    command_timeout=30
+                )
+                
+                # Test connection
+                async with self.pool.acquire() as conn:
+                    await conn.fetchval("SELECT 1")
+                
+                logger.info(f"Connected to search database on attempt {attempt + 1}")
+                
+                # Initialize schema if needed
+                await self._initialize_schema()
+                return
+                
+            except Exception as e:
+                logger.warning(f"Database connection attempt {attempt + 1} failed: {e}")
+                if attempt < max_retries - 1:
+                    logger.info(f"Retrying in {retry_delay} seconds...")
+                    await asyncio.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                else:
+                    logger.error(f"Failed to connect to database after {max_retries} attempts")
+                    raise
     
     async def disconnect(self):
         """Close database connection pool."""
@@ -449,3 +466,116 @@ class SearchDatabase:
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         """Async context manager exit."""
         await self.disconnect()
+
+class DatabaseManager:
+    def __init__(self, database_url: str):
+        self.database_url = database_url
+        self.connection = None
+
+    async def connect(self):
+        """Connect to the database"""
+        try:
+            self.connection = await asyncpg.connect(self.database_url)
+            logger.info("Database connected successfully")
+        except Exception as e:
+            logger.error(f"Database connection failed: {e}")
+            raise
+
+    async def disconnect(self):
+        """Disconnect from the database"""
+        if self.connection:
+            await self.connection.close()
+            logger.info("Database disconnected")
+
+    async def health_check(self) -> bool:
+        """Check if database connection is healthy"""
+        try:
+            if not self.connection:
+                return False
+            result = await self.connection.fetchval("SELECT 1")
+            return result == 1
+        except Exception as e:
+            logger.error(f"Database health check failed: {e}")
+            return False
+
+    async def get_embeddings(self, limit: int = 10000):
+        """Get all embeddings for ANN search"""
+        try:
+            rows = await self.connection.fetch("""
+                SELECT e.id, e.keyframe_id, e.video_id, e.embedding, k.timestamp, s.start_time, s.end_time
+                FROM embeddings e
+                JOIN keyframes k ON e.keyframe_id = k.id
+                JOIN shots s ON k.shot_id = s.id
+                ORDER BY e.video_id, k.timestamp
+                LIMIT $1
+            """, limit)
+            
+            embeddings = []
+            metadata = []
+            
+            for row in rows:
+                embeddings.append(np.array(row['embedding']))
+                metadata.append({
+                    "id": row['id'],
+                    "keyframe_id": row['keyframe_id'],
+                    "video_id": row['video_id'],
+                    "timestamp": row['timestamp'],
+                    "start_time": row['start_time'],
+                    "end_time": row['end_time']
+                })
+            
+            return np.array(embeddings) if embeddings else np.array([]), metadata
+            
+        except Exception as e:
+            logger.error(f"Failed to get embeddings: {e}")
+            return np.array([]), []
+
+    async def get_video_segments(self, video_id: str):
+        """Get video segments with metadata"""
+        try:
+            rows = await self.connection.fetch("""
+                SELECT e.id, e.keyframe_id, e.video_id, e.embedding, 
+                       k.timestamp, k.thumbnail_path,
+                       s.shot_index, s.start_time, s.end_time
+                FROM embeddings e
+                JOIN keyframes k ON e.keyframe_id = k.id
+                JOIN shots s ON k.shot_id = s.id
+                WHERE e.video_id = $1
+                ORDER BY k.timestamp
+            """, video_id)
+            
+            segments = []
+            for row in rows:
+                segments.append({
+                    "id": row['id'],
+                    "keyframe_id": row['keyframe_id'],
+                    "video_id": row['video_id'],
+                    "embedding": np.array(row['embedding']),
+                    "timestamp": row['timestamp'],
+                    "thumbnail_path": row['thumbnail_path'],
+                    "shot_index": row['shot_index'],
+                    "start_time": row['start_time'],
+                    "end_time": row['end_time']
+                })
+            
+            return segments
+            
+        except Exception as e:
+            logger.error(f"Failed to get video segments: {e}")
+            return []
+
+    async def get_search_stats(self):
+        """Get search service statistics"""
+        try:
+            total_embeddings = await self.connection.fetchval("SELECT COUNT(*) FROM embeddings")
+            unique_videos = await self.connection.fetchval(
+                "SELECT COUNT(DISTINCT video_id) FROM embeddings"
+            )
+            
+            return {
+                "total_embeddings": total_embeddings,
+                "unique_videos": unique_videos
+            }
+        except Exception as e:
+            logger.error(f"Failed to get search stats: {e}")
+            return {}

@@ -10,34 +10,12 @@ from pydantic import BaseModel
 import uvicorn
 import asyncio
 
-# Import our custom modules with error handling
-try:
-    from text_encoder import TextEncoder
-    from ann_search import ANNSearchEngine
-    from reranker import CrossEncoderReranker
-    from boundary_regressor import BoundaryRegressor
-    from database import SearchDatabase
-    from config import Settings
-except ImportError as e:
-    logging.error(f"Failed to import required modules: {e}")
-    # Define minimal fallback classes for development
-    class Settings:
-        def __init__(self):
-            self.SERVICE_NAME = "search-service"
-            self.HOST = "0.0.0.0"
-            self.PORT = 8002
-            self.DEBUG = True
-    
-    class TextEncoder:
-        def __init__(self, settings): pass
-    class ANNSearchEngine:
-        def __init__(self, settings): pass  
-    class CrossEncoderReranker:
-        def __init__(self, settings): pass
-    class BoundaryRegressor:
-        def __init__(self, settings): pass
-    class SearchDatabase:
-        def __init__(self, settings): pass
+from config import Settings
+from text_encoder import TextEncoder
+from ann_search import ANNSearchEngine
+from reranker import CrossEncoderReranker
+from boundary_regressor import BoundaryRegressor
+from database import SearchDatabase
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -77,15 +55,12 @@ class RegressionRequest(BaseModel):
     video_segments: List[Dict[str, Any]]
     query_embedding: List[float]
 
-# Initialize services
-text_encoder = TextEncoder(settings.MODELS_PATH, settings.TEXT_ENCODER_MODEL)
-ann_search = ANNSearchEngine(settings.INDEX_PATH)
-reranker = CrossEncoderReranker(settings.RERANKER_MODEL)
-boundary_regressor = BoundaryRegressor(settings.MODELS_PATH)
-search_db = SearchDatabase(
-    f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}",
-    f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
-)
+# Initialize services with full settings
+text_encoder = TextEncoder(settings)
+ann_search = ANNSearchEngine(settings)
+reranker = CrossEncoderReranker(settings)
+boundary_regressor = BoundaryRegressor(settings)
+search_db = SearchDatabase(settings)
 
 app = FastAPI(
     title="Video Search Service",
@@ -232,6 +207,37 @@ async def embed_text(request: TextEmbedRequest):
         }
     except Exception as e:
         logger.error(f"Text embedding failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+class VideoEmbedRequest(BaseModel):
+    video_id: str
+    keyframes: List[str] = []
+
+@app.post("/api/embed/video")
+async def embed_video(request: VideoEmbedRequest):
+    """Generate video embeddings from keyframes"""
+    try:
+        if not request.keyframes:
+            # Get keyframes from database
+            keyframes = await search_db.get_video_keyframes(request.video_id)
+        else:
+            keyframes = request.keyframes
+            
+        embeddings = []
+        for keyframe_path in keyframes:
+            # Load image and generate embedding
+            embedding = await text_encoder.encode_image(keyframe_path)
+            embeddings.append(embedding.tolist())
+        
+        return {
+            "video_id": request.video_id,
+            "embeddings": embeddings,
+            "keyframes_count": len(embeddings),
+            "dimension": len(embeddings[0]) if embeddings else 0,
+            "model": text_encoder.model_name
+        }
+    except Exception as e:
+        logger.error(f"Video embedding failed: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/search/ann")

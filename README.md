@@ -1,5 +1,7 @@
 # Natural Language Video Segment Retrieval System
 
+🎉 **NEW: Automated ML Model Management** - No more manual model placement! See [📖 scripts/README.md](scripts/README.md)
+
 ## 🚀 Quick Start
 
 ### Prerequisites
@@ -15,7 +17,18 @@
    cd video-segment-retrieval
 ```
 
-2. Copy the example environment files:
+2. **🤖 Automated ML Model Setup (NEW)**
+```bash
+# Download and setup ALL ML models automatically
+python scripts/download_models.py
+
+# Or setup individual components
+python scripts/download_models.py --clip-only      # CLIP + ONNX conversion
+python scripts/download_models.py --reranker-only  # Cross-encoder models  
+python scripts/download_models.py --regressor-only # Boundary regressor + training
+```
+
+3. Copy the example environment files:
 ```bash
    cp .env.example .env
    cp frontend/.env.example frontend/.env.local
@@ -24,18 +37,21 @@
    cp backend/search/.env.example backend/search/.env
 ```
 
-3. Customize the environment variables as needed
+4. Customize the environment variables as needed
 
-2. **Start with Docker (Recommended)**
+2. **Start with Docker (Recommended - Models Auto-Downloaded)**
 ```bash
-# Start all services
+# Start all services (ML models downloaded automatically during build)
 docker-compose up -d
 
 # Check service health
 docker-compose ps
 
-# View logs
+# View logs (including model download progress)
 docker-compose logs -f
+
+# Verify models are ready
+cat models/model_manifest.json
 ```
 
 3. **Access Applications**

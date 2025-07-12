@@ -8,8 +8,9 @@ const fastify = require('fastify')({
 });
 
 const axios = require('axios');
-const Redis = require('ioredis');
+const fs = require('fs');
 const path = require('path');
+const Redis = require('ioredis');
 
 // Configuration
 const config = {
@@ -17,14 +18,72 @@ const config = {
   host: process.env.HOST || '0.0.0.0',
   ingestServiceUrl: process.env.INGEST_SERVICE_URL || 'http://localhost:8001',
   searchServiceUrl: process.env.SEARCH_SERVICE_URL || 'http://localhost:8002',
-  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379'
+  redisUrl: process.env.REDIS_URL || 'redis://localhost:6379',
+  jwtSecret: process.env.JWT_SECRET || 'your-secret-key',
+  enableAuth: process.env.ENABLE_AUTH === 'true'
 };
 
 // Redis client
 const redis = new Redis(config.redisUrl);
 
+// Rate limiting
+const rateLimitCache = new Map();
+
+function rateLimit(limit, windowMs) {
+  return async (request, reply) => {
+    const key = request.ip;
+    const now = Date.now();
+    const windowStart = now - windowMs;
+    
+    // Clean old entries
+    if (rateLimitCache.has(key)) {
+      const timestamps = rateLimitCache.get(key).filter(time => time > windowStart);
+      rateLimitCache.set(key, timestamps);
+    }
+    
+    const requests = rateLimitCache.get(key) || [];
+    
+    if (requests.length >= limit) {
+      return reply.code(429).send({ 
+        error: 'Too many requests',
+        retryAfter: Math.ceil((requests[0] + windowMs - now) / 1000)
+      });
+    }
+    
+    requests.push(now);
+    rateLimitCache.set(key, requests);
+  };
+}
+
+// JWT Authentication (simple implementation)
+async function authenticate(request, reply) {
+  if (!config.enableAuth) return; // Skip auth if disabled
+  
+  const token = request.headers.authorization?.replace('Bearer ', '');
+  if (!token) {
+    return reply.code(401).send({ error: 'Authentication required' });
+  }
+  
+  try {
+    // In production, use proper JWT validation
+    // For now, just check if token exists
+    if (token !== 'valid-token') {
+      return reply.code(401).send({ error: 'Invalid token' });
+    }
+  } catch (error) {
+    return reply.code(401).send({ error: 'Invalid token' });
+  }
+}
+
 // Register plugins
 async function registerPlugins() {
+  // Rate limiting plugin
+  await fastify.register(require('@fastify/rate-limit'), {
+    max: 100,
+    timeWindow: '1 minute',
+    redis: redis
+  });
+
   // CORS
   await fastify.register(require('@fastify/cors'), {
     origin: true,
@@ -104,7 +163,32 @@ fastify.get('/health', async (request, reply) => {
 });
 
 // Video management endpoints (proxy to ingestion service)
-fastify.get('/api/videos', async (request, reply) => {
+fastify.get('/api/videos', {
+  preHandler: [rateLimit(50, 60000)], // 50 requests per minute
+  schema: {
+    description: 'List all videos in the dataset with processing status',
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          videos: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                video_id: { type: 'string' },
+                filename: { type: 'string' },
+                processed: { type: 'boolean' },
+                file_size: { type: 'number' },
+                path: { type: 'string' }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}, async (request, reply) => {
   try {
     const response = await axios.get(`${config.ingestServiceUrl}/api/videos`);
     return response.data;
@@ -114,10 +198,36 @@ fastify.get('/api/videos', async (request, reply) => {
   }
 });
 
-fastify.post('/api/videos/:video_id/process', async (request, reply) => {
+fastify.post('/api/videos/:video_id/process', {
+  preHandler: [authenticate, rateLimit(10, 60000)], // Auth + 10 requests per minute
+  schema: {
+    description: 'Process a specific video for search indexing',
+    params: {
+      type: 'object',
+      properties: {
+        video_id: { type: 'string', description: 'Video identifier' }
+      },
+      required: ['video_id']
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          video_id: { type: 'string' },
+          status: { type: 'string' },
+          shots_detected: { type: 'number' },
+          keyframes_extracted: { type: 'number' },
+          embeddings_generated: { type: 'number' },
+          processing_time_seconds: { type: 'number' },
+          message: { type: 'string' }
+        }
+      }
+    }
+  }
+}, async (request, reply) => {
   try {
     const { video_id } = request.params;
-    const response = await axios.post(`${config.ingestServiceUrl}/api/process/${video_id}`);
+    const response = await axios.post(`${config.ingestServiceUrl}/api/videos/${video_id}/process`);
     return response.data;
   } catch (error) {
     fastify.log.error('Error processing video:', error);
@@ -128,9 +238,34 @@ fastify.post('/api/videos/:video_id/process', async (request, reply) => {
   }
 });
 
-fastify.post('/api/videos/process-all', async (request, reply) => {
+fastify.post('/api/videos/process-all', {
+  preHandler: [authenticate, rateLimit(2, 300000)], // Auth + 2 requests per 5 minutes
+  schema: {
+    description: 'Process all unprocessed videos in the dataset',
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          status: { type: 'string' },
+          processed_count: { type: 'number' },
+          failed_videos: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                video_id: { type: 'string' },
+                error: { type: 'string' }
+              }
+            }
+          },
+          message: { type: 'string' }
+        }
+      }
+    }
+  }
+}, async (request, reply) => {
   try {
-    const response = await axios.post(`${config.ingestServiceUrl}/api/process-all`);
+    const response = await axios.post(`${config.ingestServiceUrl}/api/videos/process-all`);
     return response.data;
   } catch (error) {
     fastify.log.error('Error processing all videos:', error);
@@ -138,7 +273,32 @@ fastify.post('/api/videos/process-all', async (request, reply) => {
   }
 });
 
-fastify.get('/api/videos/:video_id/status', async (request, reply) => {
+fastify.get('/api/videos/:video_id/status', {
+  preHandler: [rateLimit(100, 60000)], // 100 requests per minute
+  schema: {
+    description: 'Get processing status for a specific video',
+    params: {
+      type: 'object',
+      properties: {
+        video_id: { type: 'string', description: 'Video identifier' }
+      },
+      required: ['video_id']
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          video_id: { type: 'string' },
+          processed: { type: 'boolean' },
+          shots_count: { type: 'number' },
+          keyframes_count: { type: 'number' },
+          embeddings_count: { type: 'number' },
+          processed_at: { type: 'string' }
+        }
+      }
+    }
+  }
+}, async (request, reply) => {
   try {
     const { video_id } = request.params;
     const response = await axios.get(`${config.ingestServiceUrl}/api/videos/${video_id}/status`);
@@ -149,7 +309,29 @@ fastify.get('/api/videos/:video_id/status', async (request, reply) => {
   }
 });
 
-fastify.delete('/api/videos/:video_id', async (request, reply) => {
+fastify.delete('/api/videos/:video_id', {
+  preHandler: [authenticate, rateLimit(10, 60000)], // Auth + 10 requests per minute
+  schema: {
+    description: 'Delete processed video data (preserves original MP4 file)',
+    params: {
+      type: 'object',
+      properties: {
+        video_id: { type: 'string', description: 'Video identifier' }
+      },
+      required: ['video_id']
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          video_id: { type: 'string' },
+          status: { type: 'string' },
+          note: { type: 'string' }
+        }
+      }
+    }
+  }
+}, async (request, reply) => {
   try {
     const { video_id } = request.params;
     const response = await axios.delete(`${config.ingestServiceUrl}/api/videos/${video_id}`);
@@ -237,14 +419,28 @@ fastify.post('/api/search', {
 });
 
 // Text embedding endpoint
-fastify.post('/api/query/embed', {
+fastify.post('/api/embed/text', {
   schema: {
-    description: 'Generate text embeddings',
+    description: 'Generate text embeddings using CLIP model',
     body: {
       type: 'object',
       required: ['text'],
       properties: {
-        text: { type: 'string' }
+        text: { type: 'string', description: 'Text to embed' }
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          embedding: {
+            type: 'array',
+            items: { type: 'number' },
+            description: 'Text embedding vector'
+          },
+          dimension: { type: 'number' },
+          model: { type: 'string' }
+        }
       }
     }
   }
@@ -258,8 +454,34 @@ fastify.post('/api/query/embed', {
   }
 });
 
+// Video embedding endpoint
+fastify.post('/api/embed/video', {
+  schema: {
+    description: 'Generate video embeddings from keyframes',
+    body: {
+      type: 'object',
+      required: ['video_id'],
+      properties: {
+        video_id: { type: 'string' },
+        keyframes: {
+          type: 'array',
+          items: { type: 'string' }
+        }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    const response = await axios.post(`${config.searchServiceUrl}/api/embed/video`, request.body);
+    return response.data;
+  } catch (error) {
+    fastify.log.error('Video embedding error:', error);
+    return reply.code(500).send({ error: 'Failed to generate video embeddings' });
+  }
+});
+
 // Reranking endpoint
-fastify.post('/api/query/rerank', {
+fastify.post('/api/rerank', {
   schema: {
     description: 'Rerank search results using cross-encoder',
     body: {
@@ -280,6 +502,25 @@ fastify.post('/api/query/rerank', {
           }
         }
       }
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          reranked_results: {
+            type: 'array',
+            items: {
+              type: 'object',
+              properties: {
+                video_id: { type: 'string' },
+                start_time: { type: 'number' },
+                end_time: { type: 'number' },
+                score: { type: 'number' }
+              }
+            }
+          }
+        }
+      }
     }
   }
 }, async (request, reply) => {
@@ -293,9 +534,31 @@ fastify.post('/api/query/rerank', {
 });
 
 // Boundary regression endpoint
-fastify.post('/api/query/regress', {
+fastify.post('/api/regress', {
   schema: {
-    description: 'Refine segment boundaries using regression model'
+    description: 'Refine segment boundaries using regression model',
+    body: {
+      type: 'object',
+      required: ['video_segments', 'query_embedding'],
+      properties: {
+        video_segments: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              video_id: { type: 'string' },
+              start_time: { type: 'number' },
+              end_time: { type: 'number' },
+              score: { type: 'number' }
+            }
+          }
+        },
+        query_embedding: {
+          type: 'array',
+          items: { type: 'number' }
+        }
+      }
+    }
   }
 }, async (request, reply) => {
   try {
@@ -333,6 +596,52 @@ fastify.get('/api/admin/stats', async (request, reply) => {
 fastify.setErrorHandler((error, request, reply) => {
   fastify.log.error(error);
   reply.status(500).send({ error: 'Internal Server Error' });
+});
+
+// Video streaming endpoint
+fastify.get('/api/videos/:videoId/stream', async (request, reply) => {
+  try {
+    const { videoId } = request.params;
+    
+    // Forward to ingestion service for video streaming
+    const videoPath = path.join('/workspace/competitions/AIC_2025/SIU_Unicorn/Natural-Language-Video-Segment-Retrieval-System/data/videos/datasets/custom', `${videoId}.mp4`);
+    
+    // Check if file exists
+    if (!fs.existsSync(videoPath)) {
+      return reply.code(404).send({ error: 'Video not found' });
+    }
+    
+    // Get file stats for range requests
+    const stats = fs.statSync(videoPath);
+    const fileSize = stats.size;
+    
+    // Handle range requests for video streaming
+    const range = request.headers.range;
+    
+    if (range) {
+      const parts = range.replace(/bytes=/, "").split("-");
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+      const chunksize = (end - start) + 1;
+      
+      const stream = fs.createReadStream(videoPath, { start, end });
+      
+      reply.code(206)
+        .header('Content-Range', `bytes ${start}-${end}/${fileSize}`)
+        .header('Accept-Ranges', 'bytes')
+        .header('Content-Length', chunksize)
+        .header('Content-Type', 'video/mp4')
+        .send(stream);
+    } else {
+      reply
+        .header('Content-Length', fileSize)
+        .header('Content-Type', 'video/mp4')
+        .send(fs.createReadStream(videoPath));
+    }
+  } catch (error) {
+    fastify.log.error('Video streaming error:', error);
+    reply.code(500).send({ error: 'Video streaming failed' });
+  }
 });
 
 // Start server

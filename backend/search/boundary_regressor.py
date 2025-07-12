@@ -122,14 +122,36 @@ class BoundaryRegressor:
             self.model = BoundaryRegressionModel(input_dim=embedding_dim)
             self.model.to(self.device)
             
-            # Load pre-trained weights if available
-            if self.model_path.exists():
-                logger.info(f"Loading pre-trained boundary regression model from {self.model_path}")
-                checkpoint = torch.load(self.model_path, map_location=self.device)
-                self.model.load_state_dict(checkpoint['model_state_dict'])
-                logger.info("Loaded pre-trained boundary regression model")
-            else:
-                logger.warning("No pre-trained boundary regression model found, using random initialization")
+            # Load pre-trained weights if available (check multiple locations)
+            model_loaded = False
+            weight_files = [
+                self.model_path,  # Original path
+                self.model_path.parent / "boundary_regressor_pretrained.pth",  # Automated setup
+                self.model_path.parent / "regressor" / "boundary_regressor_pretrained.pth"  # Alternative location
+            ]
+            
+            for weight_file in weight_files:
+                if weight_file.exists():
+                    try:
+                        logger.info(f"Loading pre-trained boundary regression model from {weight_file}")
+                        checkpoint = torch.load(weight_file, map_location=self.device)
+                        
+                        # Handle different checkpoint formats
+                        if 'model_state_dict' in checkpoint:
+                            self.model.load_state_dict(checkpoint['model_state_dict'])
+                        else:
+                            self.model.load_state_dict(checkpoint)
+                            
+                        logger.info("✅ Loaded pre-trained boundary regression model successfully")
+                        model_loaded = True
+                        break
+                    except Exception as e:
+                        logger.warning(f"Failed to load weights from {weight_file}: {e}")
+                        continue
+            
+            if not model_loaded:
+                logger.warning("⚠️  No pre-trained boundary regression model found, using random initialization")
+                logger.info("💡 Run 'python scripts/download_models.py --regressor-only' to get sample pre-trained weights")
             
             self.model.eval()
             

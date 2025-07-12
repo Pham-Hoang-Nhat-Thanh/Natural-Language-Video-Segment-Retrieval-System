@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import Response
 import uvicorn
 import os
 from pathlib import Path
@@ -7,6 +8,8 @@ import logging
 from datetime import datetime
 import asyncio
 import glob
+import time
+import psutil
 
 from shot_detector import ShotDetector
 from keyframe_extractor import KeyframeExtractor
@@ -20,6 +23,14 @@ logger = logging.getLogger(__name__)
 
 # Load settings
 settings = Settings()
+
+# Metrics tracking
+METRICS = {
+    'videos_processed': 0,
+    'processing_time_total': 0,
+    'errors_total': 0,
+    'startup_time': time.time()
+}
 
 # Initialize services
 shot_detector = ShotDetector()
@@ -58,13 +69,94 @@ async def shutdown_event():
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.utcnow().isoformat(),
-        "service": "video-processing",
-        "version": "1.0.0"
-    }
+    """Health check endpoint with detailed system info"""
+    try:
+        # Check database connection
+        db_healthy = await db_manager.health_check()
+        
+        # Check system resources
+        cpu_percent = psutil.cpu_percent(interval=1)
+        memory = psutil.virtual_memory()
+        disk = psutil.disk_usage('/')
+        
+        # Check if model is loaded
+        model_loaded = hasattr(embedding_service, 'model') and embedding_service.model is not None
+        
+        health_status = {
+            "status": "healthy" if db_healthy and model_loaded else "unhealthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "service": "video-processing",
+            "version": "1.0.0",
+            "uptime_seconds": time.time() - METRICS['startup_time'],
+            "checks": {
+                "database": "healthy" if db_healthy else "unhealthy",
+                "embedding_model": "loaded" if model_loaded else "not_loaded",
+                "system_resources": {
+                    "cpu_percent": cpu_percent,
+                    "memory_percent": memory.percent,
+                    "disk_percent": (disk.used / disk.total) * 100,
+                    "memory_available_gb": memory.available / (1024**3)
+                }
+            },
+            "metrics": METRICS
+        }
+        
+        status_code = 200 if health_status["status"] == "healthy" else 503
+        return health_status
+        
+    except Exception as e:
+        logger.error(f"Health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "timestamp": datetime.utcnow().isoformat(),
+            "error": str(e)
+        }
+
+@app.get("/metrics")
+async def get_metrics():
+    """Prometheus-style metrics endpoint"""
+    try:
+        # Get current system metrics
+        cpu_percent = psutil.cpu_percent()
+        memory = psutil.virtual_memory()
+        
+        # Get processing metrics
+        uptime = time.time() - METRICS['startup_time']
+        
+        metrics_text = f"""# HELP video_processing_total Total number of videos processed
+# TYPE video_processing_total counter
+video_processing_total {METRICS['videos_processed']}
+
+# HELP video_processing_errors_total Total number of processing errors
+# TYPE video_processing_errors_total counter
+video_processing_errors_total {METRICS['errors_total']}
+
+# HELP video_processing_duration_seconds Total time spent processing videos
+# TYPE video_processing_duration_seconds counter
+video_processing_duration_seconds {METRICS['processing_time_total']}
+
+# HELP service_uptime_seconds Service uptime in seconds
+# TYPE service_uptime_seconds gauge
+service_uptime_seconds {uptime}
+
+# HELP system_cpu_usage_percent CPU usage percentage
+# TYPE system_cpu_usage_percent gauge
+system_cpu_usage_percent {cpu_percent}
+
+# HELP system_memory_usage_percent Memory usage percentage
+# TYPE system_memory_usage_percent gauge
+system_memory_usage_percent {memory.percent}
+
+# HELP embedding_model_loaded Whether the embedding model is loaded
+# TYPE embedding_model_loaded gauge
+embedding_model_loaded {1 if hasattr(embedding_service, 'model') and embedding_service.model else 0}
+"""
+        
+        return Response(content=metrics_text, media_type="text/plain")
+        
+    except Exception as e:
+        logger.error(f"Metrics collection failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/api/videos")
 async def list_videos():
@@ -92,7 +184,7 @@ async def list_videos():
         logger.error(f"Error listing videos: {e}")
         raise HTTPException(status_code=500, detail="Failed to list videos")
 
-@app.post("/api/process/{video_id}")
+@app.post("/api/videos/{video_id}/process")
 async def process_video(video_id: str):
     """
     Process a specific MP4 video from the dataset directory
@@ -128,6 +220,10 @@ async def process_video(video_id: str):
         
         logger.info(f"Processing complete for video: {video_id}")
         
+        # Update metrics
+        METRICS['videos_processed'] += 1
+        METRICS['processing_time_total'] += time.time() - METRICS['startup_time']
+        
         return {
             "video_id": video_id,
             "status": "success",
@@ -139,9 +235,10 @@ async def process_video(video_id: str):
         
     except Exception as e:
         logger.error(f"Processing failed for video {video_id}: {str(e)}")
+        METRICS['errors_total'] += 1
         raise HTTPException(status_code=500, detail=f"Processing failed: {str(e)}")
 
-@app.post("/api/process-all")
+@app.post("/api/videos/process-all")
 async def process_all_videos():
     """Process all unprocessed MP4 videos in the dataset directory"""
     try:
@@ -163,7 +260,8 @@ async def process_all_videos():
                 continue
             
             try:
-                await process_video(video_id)
+                # Call the process_video function directly
+                result = await process_video(video_id)
                 processed_count += 1
                 logger.info(f"Successfully processed {video_id}")
             except Exception as e:
@@ -229,6 +327,11 @@ async def get_service_stats():
         videos_dir = Path(settings.data_path) / "videos" / "datasets" / "custom"
         total_files = len(list(videos_dir.glob("*.mp4"))) if videos_dir.exists() else 0
         
+        # Calculate system metrics
+        cpu_usage = psutil.cpu_percent(interval=1)
+        memory_info = psutil.virtual_memory()
+        memory_usage = memory_info.percent
+        
         return {
             "total_mp4_files": total_files,
             "processed_videos": stats.get("total_videos", 0),
@@ -238,7 +341,12 @@ async def get_service_stats():
             "model_info": {
                 "clip_model": embedding_service.model_name,
                 "embedding_dim": embedding_service.embedding_dim
-            }
+            },
+            "system_metrics": {
+                "cpu_usage_percent": cpu_usage,
+                "memory_usage_percent": memory_usage
+            },
+            "metrics_tracking": METRICS
         }
         
     except Exception as e:
