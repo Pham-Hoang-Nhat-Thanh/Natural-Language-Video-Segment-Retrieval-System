@@ -1,9 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: 'standalone',
-  experimental: {
-    appDir: true,
-  },
   images: {
     domains: ['localhost'],
     unoptimized: true
@@ -36,19 +33,6 @@ const nextConfig = {
         ],
       },
     ]
-  },
-  webpack: (config, { isServer }) => {
-    // Handle video.js properly
-    if (!isServer) {
-      config.resolve.fallback = {
-        ...config.resolve.fallback,
-        fs: false,
-        net: false,
-        tls: false,
-      }
-    }
-    
-    return config
   }
 }
 

@@ -2,176 +2,25 @@
 @tailwind components;
 @tailwind utilities;
 
-@layer base {
-  :root {
-    --background: 0 0% 100%;
-    --foreground: 222.2 84% 4.9%;
-    --card: 0 0% 100%;
-    --card-foreground: 222.2 84% 4.9%;
-    --popover: 0 0% 100%;
-    --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
-    --primary-foreground: 210 40% 98%;
-    --secondary: 210 40% 96%;
-    --secondary-foreground: 222.2 84% 4.9%;
-    --muted: 210 40% 96%;
-    --muted-foreground: 215.4 16.3% 46.9%;
-    --accent: 210 40% 96%;
-    --accent-foreground: 222.2 84% 4.9%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 214.3 31.8% 91.4%;
-    --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
-    --radius: 0.5rem;
-  }
-
-  .dark {
-    --background: 222.2 84% 4.9%;
-    --foreground: 210 40% 98%;
-    --card: 222.2 84% 4.9%;
-    --card-foreground: 210 40% 98%;
-    --popover: 222.2 84% 4.9%;
-    --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
-    --primary-foreground: 222.2 84% 4.9%;
-    --secondary: 217.2 32.6% 17.5%;
-    --secondary-foreground: 210 40% 98%;
-    --muted: 217.2 32.6% 17.5%;
-    --muted-foreground: 215 20.2% 65.1%;
-    --accent: 217.2 32.6% 17.5%;
-    --accent-foreground: 210 40% 98%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
-    --border: 217.2 32.6% 17.5%;
-    --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 94.1%;
-  }
-}
-
-@layer base {
-  * {
-    @apply border-border;
-  }
-  body {
-    @apply bg-background text-foreground;
-  }
-}
-
-/* Custom styles for video player */
-.video-js {
-  @apply w-full h-auto;
-}
-
-.video-js .vjs-big-play-button {
-  @apply bg-primary/80 border-primary;
-  font-size: 2.5em;
-}
-
-.video-js .vjs-control-bar {
-  @apply bg-black/70;
-}
-
-.video-js .vjs-progress-control .vjs-progress-holder {
-  @apply bg-white/20;
-}
-
-.video-js .vjs-progress-control .vjs-play-progress {
-  @apply bg-primary;
-}
-
-/* Search loading animation */
-.search-loading {
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
-  background-size: 200% 100%;
-  animation: loading 1.5s infinite;
-}
-
-@keyframes loading {
-  0% {
-    background-position: -200% 0;
-  }
-  100% {
-    background-position: 200% 0;
-  }
-}
-
-/* Smooth scroll */
-html {
-  scroll-behavior: smooth;
+/* Base styles */
+html, body {
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', sans-serif;
 }
 
 /* Custom scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
 }
 
 ::-webkit-scrollbar-track {
-  @apply bg-muted;
+  background: #f1f1f1;
 }
 
 ::-webkit-scrollbar-thumb {
-  @apply bg-muted-foreground/30 rounded-full;
+  background: #c1c1c1;
+  border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  @apply bg-muted-foreground/50;
-}
-
-/* Video segment highlight */
-.video-segment-highlight {
-  box-shadow: 0 0 0 2px theme('colors.primary'), 0 0 20px theme('colors.primary/50');
-  transition: box-shadow 0.2s ease-in-out;
-}
-
-/* Result card hover effects */
-.result-card {
-  transition: all 0.2s ease-in-out;
-}
-
-.result-card:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
-}
-
-/* Gradient text */
-.gradient-text {
-  background: linear-gradient(135deg, theme('colors.primary'), theme('colors.secondary'));
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-/* Loading skeleton */
-.skeleton {
-  background: linear-gradient(90deg, 
-    theme('colors.muted') 0%, 
-    theme('colors.muted-foreground/10') 50%, 
-    theme('colors.muted') 100%
-  );
-  background-size: 200% 100%;
-  animation: loading 1.5s infinite;
-}
-
-/* Focus styles */
-.focus-ring {
-  @apply focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2;
-}
-
-/* Admin dashboard specific styles */
-.dashboard-card {
-  @apply bg-card border border-border rounded-lg p-6 shadow-sm;
-}
-
-.metric-card {
-  @apply dashboard-card hover:shadow-md transition-shadow duration-200;
-}
-
-/* Chart styling */
-.recharts-cartesian-axis-tick-value {
-  @apply text-muted-foreground text-sm;
-}
-
-.recharts-legend-item-text {
-  @apply text-foreground;
+  background: #a8a8a8;
 }

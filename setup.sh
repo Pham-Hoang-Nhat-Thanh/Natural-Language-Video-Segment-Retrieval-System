@@ -43,6 +43,14 @@ check_docker_compose() {
         print_error "Docker Compose is not installed"
         exit 1
     fi
+    
+    # Set the compose command based on what's available
+    if command -v docker-compose &> /dev/null; then
+        COMPOSE_CMD="docker-compose"
+    else
+        COMPOSE_CMD="docker compose"
+    fi
+    
     print_success "Docker Compose is available"
 }
 
@@ -238,11 +246,11 @@ start_services() {
     
     # Build images
     print_status "Building Docker images..."
-    docker-compose build
+    $COMPOSE_CMD build
     
     # Start services
     print_status "Starting services..."
-    docker-compose up -d
+    $COMPOSE_CMD up -d
     
     print_success "Services started"
 }
@@ -253,14 +261,14 @@ wait_for_services() {
     
     # Wait for database
     print_status "Waiting for PostgreSQL..."
-    until docker-compose exec postgres pg_isready -U postgres > /dev/null 2>&1; do
+    until $COMPOSE_CMD exec postgres pg_isready -U postgres > /dev/null 2>&1; do
         sleep 2
     done
     print_success "PostgreSQL is ready"
     
     # Wait for Redis
     print_status "Waiting for Redis..."
-    until docker-compose exec redis redis-cli ping > /dev/null 2>&1; do
+    until $COMPOSE_CMD exec redis redis-cli ping > /dev/null 2>&1; do
         sleep 2
     done
     print_success "Redis is ready"
@@ -295,10 +303,10 @@ show_service_info() {
     echo "  Redis:             localhost:6379"
     echo ""
     echo "📁 Useful Commands:"
-    echo "  View logs:         docker-compose logs -f"
-    echo "  Stop services:     docker-compose down"
-    echo "  Restart services:  docker-compose restart"
-    echo "  Update services:   docker-compose pull && docker-compose up -d"
+    echo "  View logs:         $COMPOSE_CMD logs -f"
+    echo "  Stop services:     $COMPOSE_CMD down"
+    echo "  Restart services:  $COMPOSE_CMD restart"
+    echo "  Update services:   $COMPOSE_CMD pull && $COMPOSE_CMD up -d"
     echo ""
     echo "🔧 Next Steps:"
     echo "  1. Place MP4 videos in data/videos/datasets/custom/ directory"

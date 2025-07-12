@@ -78,11 +78,14 @@ class RegressionRequest(BaseModel):
     query_embedding: List[float]
 
 # Initialize services
-text_encoder = TextEncoder(settings.model_path, settings.clip_model_name)
-ann_search = ANNSearchEngine(settings.faiss_index_path)
-reranker = CrossEncoderReranker(settings.reranker_model_path)
-boundary_regressor = BoundaryRegressor(settings.regressor_model_path)
-search_db = SearchDatabase(settings.database_url, settings.redis_url)
+text_encoder = TextEncoder(settings.MODELS_PATH, settings.TEXT_ENCODER_MODEL)
+ann_search = ANNSearchEngine(settings.INDEX_PATH)
+reranker = CrossEncoderReranker(settings.RERANKER_MODEL)
+boundary_regressor = BoundaryRegressor(settings.MODELS_PATH)
+search_db = SearchDatabase(
+    f"postgresql://{settings.DB_USER}:{settings.DB_PASSWORD}@{settings.DB_HOST}:{settings.DB_PORT}/{settings.DB_NAME}",
+    f"redis://{settings.REDIS_HOST}:{settings.REDIS_PORT}/{settings.REDIS_DB}"
+)
 
 app = FastAPI(
     title="Video Search Service",

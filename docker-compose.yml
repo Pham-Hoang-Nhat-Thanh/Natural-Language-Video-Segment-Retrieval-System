@@ -13,7 +13,7 @@ services:
       - /app/node_modules
     environment:
       - NODE_ENV=development
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
+      - NEXT_PUBLIC_API_URL=http://localhost:8090
     depends_on:
       - api-gateway
 
@@ -23,7 +23,7 @@ services:
       context: ./backend/api-gateway
       dockerfile: Dockerfile.dev
     ports:
-      - "8000:8000"
+      - "8090:8000"
     volumes:
       - ./backend/api-gateway:/app
       - /app/node_modules
@@ -44,9 +44,9 @@ services:
   ingest-service:
     build:
       context: ./backend/ingest
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile.simple
     ports:
-      - "8001:8001"
+      - "8051:8001"
     volumes:
       - ./backend/ingest:/app
       - ./models:/app/models:ro
@@ -72,9 +72,9 @@ services:
   search-service:
     build:
       context: ./backend/search
-      dockerfile: Dockerfile.dev
+      dockerfile: Dockerfile.simple
     ports:
-      - "8002:8002"
+      - "8052:8002"
     volumes:
       - ./backend/search:/app
       - ./models:/app/models:ro
@@ -136,8 +136,8 @@ services:
   minio:
     image: minio/minio:latest
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9010:9000"
+      - "9011:9001"
     environment:
       - MINIO_ROOT_USER=minioadmin
       - MINIO_ROOT_PASSWORD=minioadmin123
@@ -154,7 +154,7 @@ services:
   prometheus:
     image: prom/prometheus:latest
     ports:
-      - "9090:9090"
+      - "9095:9090"
     volumes:
       - ./infra/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
       - prometheus_data:/prometheus

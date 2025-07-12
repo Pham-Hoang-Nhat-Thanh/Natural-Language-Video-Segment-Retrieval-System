@@ -1,7 +1,9 @@
 const fastify = require('fastify')({
   logger: {
     level: process.env.LOG_LEVEL || 'info',
-    prettyPrint: process.env.NODE_ENV === 'development'
+    transport: process.env.NODE_ENV === 'development' ? {
+      target: 'pino-pretty'
+    } : undefined
   }
 });
 
