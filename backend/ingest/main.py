@@ -4,11 +4,12 @@ from fastapi.responses import Response
 import uvicorn
 import os
 from pathlib import Path
-import logging
+from contextlib import asynccontextmanager
 from datetime import datetime
 import asyncio
 import glob
 import time
+import logging
 import psutil
 
 from shot_detector import ShotDetector
@@ -38,10 +39,27 @@ keyframe_extractor = KeyframeExtractor()
 embedding_service = EmbeddingService(settings.model_path)
 db_manager = DatabaseManager(settings.database_url)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Manage application lifespan"""
+    # Startup
+    logger.info("Starting Video Processing Service...")
+    await db_manager.connect()
+    await embedding_service.load_model()
+    logger.info("Service initialization complete")
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down Video Processing Service...")
+    await db_manager.disconnect()
+
+# Create FastAPI app with lifespan
 app = FastAPI(
     title="Video Processing Service",
-    description="Service for processing MP4 videos from dataset directory",
-    version="1.0.0"
+    description="API for video ingestion and processing",
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -52,20 +70,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-@app.on_startup
-async def startup_event():
-    """Initialize services on startup"""
-    logger.info("Starting Video Processing Service...")
-    await db_manager.connect()
-    await embedding_service.load_model()
-    logger.info("Service initialization complete")
-
-@app.on_shutdown
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    logger.info("Shutting down Video Processing Service...")
-    await db_manager.disconnect()
 
 @app.get("/health")
 async def health_check():
@@ -80,7 +84,7 @@ async def health_check():
         disk = psutil.disk_usage('/')
         
         # Check if model is loaded
-        model_loaded = hasattr(embedding_service, 'model') and embedding_service.model is not None
+        model_loaded = hasattr(embedding_service, 'clip_model') and embedding_service.clip_model is not None
         
         health_status = {
             "status": "healthy" if db_healthy and model_loaded else "unhealthy",
@@ -149,7 +153,7 @@ system_memory_usage_percent {memory.percent}
 
 # HELP embedding_model_loaded Whether the embedding model is loaded
 # TYPE embedding_model_loaded gauge
-embedding_model_loaded {1 if hasattr(embedding_service, 'model') and embedding_service.model else 0}
+embedding_model_loaded {1 if hasattr(embedding_service, 'clip_model') and embedding_service.clip_model else 0}
 """
         
         return Response(content=metrics_text, media_type="text/plain")
@@ -352,6 +356,11 @@ async def get_service_stats():
     except Exception as e:
         logger.error(f"Failed to get stats: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/test")
+async def test_endpoint():
+    """Simple test endpoint"""
+    return {"message": "test ok"}
 
 if __name__ == "__main__":
     uvicorn.run(

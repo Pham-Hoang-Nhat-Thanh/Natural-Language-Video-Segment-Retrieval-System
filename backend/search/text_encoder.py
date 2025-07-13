@@ -18,6 +18,14 @@ from concurrent.futures import ThreadPoolExecutor
 import redis
 from config import Settings
 
+# Try to import CLIP if available
+try:
+    import clip
+    CLIP_AVAILABLE = True
+except ImportError:
+    CLIP_AVAILABLE = False
+    logging.warning("CLIP not available, falling back to sentence transformers")
+
 logger = logging.getLogger(__name__)
 
 class TextEncoder:
@@ -50,6 +58,59 @@ class TextEncoder:
     def _load_default_model(self):
         """Load the default sentence transformer model."""
         try:
+            # Try to use local CLIP models first if available
+            local_model_path = Path("/app/models/clip")
+            if CLIP_AVAILABLE and local_model_path.exists():
+                logger.info("Using local CLIP model for text encoding")
+                device = "cuda" if torch.cuda.is_available() else "cpu"
+                
+                # Try to load CLIP model from local path
+                model_files = list(local_model_path.glob("*.pt"))
+                if model_files:
+                    # Use the first available model
+                    model_file = model_files[0]
+                    model_name = model_file.stem.replace("-", "/")  # Convert ViT-B-32.pt to ViT-B/32
+                    
+                    logger.info(f"Loading CLIP model: {model_name} from {model_file}")
+                    model, preprocess = clip.load(model_name, device=device, download_root=str(local_model_path.parent))
+                    
+                    # Wrap CLIP model to match SentenceTransformer interface
+                    class CLIPTextEncoder:
+                        def __init__(self, clip_model, device):
+                            self.clip_model = clip_model
+                            self.device = device
+                            self.embedding_dim = 512  # CLIP ViT-B/32 text embedding dimension
+                            self.max_seq_length = 77   # CLIP max sequence length
+                        
+                        def encode(self, texts, **kwargs):
+                            if isinstance(texts, str):
+                                texts = [texts]
+                            
+                            with torch.no_grad():
+                                text_tokens = clip.tokenize(texts).to(self.device)
+                                text_features = self.clip_model.encode_text(text_tokens)
+                                text_features = text_features / text_features.norm(dim=-1, keepdim=True)
+                                return text_features.cpu().numpy()
+                        
+                        def eval(self):
+                            self.clip_model.eval()
+                        
+                        def get_sentence_embedding_dimension(self):
+                            return self.embedding_dim
+                    
+                    wrapped_model = CLIPTextEncoder(model, device)
+                    wrapped_model.eval()
+                    
+                    self.models["default"] = {
+                        "model": wrapped_model,
+                        "embedding_dim": wrapped_model.embedding_dim,
+                        "max_length": wrapped_model.max_seq_length
+                    }
+                    
+                    logger.info(f"Loaded CLIP model with embedding dimension: {self.models['default']['embedding_dim']}")
+                    return
+            
+            # Fallback to sentence transformers
             model_name = self.settings.TEXT_ENCODER_MODEL
             logger.info(f"Loading text encoder model: {model_name}")
             

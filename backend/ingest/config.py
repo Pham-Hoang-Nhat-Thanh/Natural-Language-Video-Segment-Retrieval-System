@@ -1,5 +1,6 @@
 from pydantic_settings import BaseSettings
-from typing import Optional
+from pydantic import Field
+from typing import Optional, List, Tuple
 import os
 
 class Settings(BaseSettings):
@@ -34,14 +35,14 @@ class Settings(BaseSettings):
     min_shot_length: int = 30
     
     # Keyframe extraction settings
-    keyframe_size: tuple = (224, 224)
+    keyframe_size: Tuple[int, int] = (224, 224)
     keyframe_quality: int = 95
     frames_per_shot: int = 1
     
     # Processing settings
     max_video_size_mb: int = 1000
     max_video_duration_minutes: int = 120
-    supported_formats: list = ["mp4", "avi", "mov", "mkv", "webm"]
+    supported_formats: List[str] = ["mp4", "avi", "mov", "mkv", "webm"]
     
     # Performance settings
     max_workers: int = 4
@@ -59,8 +60,6 @@ class Settings(BaseSettings):
     metrics_port: int = 9001
     
     class Config:
-        env_file = ".env"
-        env_prefix = "INGEST_"
         case_sensitive = False
 
 # Global settings instance
