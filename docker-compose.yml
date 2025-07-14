@@ -9,13 +9,18 @@ services:
     ports:
       - "3000:3000"
     volumes:
-      - ./frontend:/app
-      - /app/node_modules
+      # Selective mounting for faster startup while preserving hot reload
+      - ./frontend/app:/app/app
+      - ./frontend/components:/app/components
+      - ./frontend/lib:/app/lib
+      - ./frontend/types:/app/types
+      - ./frontend/public:/app/public
     environment:
       - NODE_ENV=development
       - NEXT_PUBLIC_API_URL=http://localhost:8090
     depends_on:
       - api-gateway
+    restart: unless-stopped
 
   # API Gateway
   api-gateway:
@@ -25,8 +30,8 @@ services:
     ports:
       - "8090:8000"
     volumes:
-      - ./backend/api-gateway:/app
-      - /app/node_modules
+      # Selective mounting for faster startup
+      - ./backend/api-gateway/src:/app/src
       - ./data:/app/data:ro
     environment:
       - NODE_ENV=development
@@ -39,25 +44,26 @@ services:
       - redis
       - ingest-service
       - search-service
+    # Simplified health check for faster startup
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
-      interval: 30s
+      interval: 60s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 2
+      start_period: 30s
     restart: unless-stopped
 
   # Ingestion Service
   ingest-service:
     build:
       context: ./backend/ingest
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     ports:
       - "8051:8001"
     volumes:
-      - ./backend/ingest:/app
-      - ./models:/app/models:ro
+      # Optimized volume mapping
       - ./data:/app/data:rw
+      - ./models:/app/models:ro
     environment:
       - PYTHONPATH=/app
       - DATABASE_URL=postgresql://postgres:password@postgres:5432/video_retrieval
@@ -67,12 +73,13 @@ services:
     depends_on:
       - postgres
       - redis
+    # Simplified health check for faster startup
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
-      interval: 30s
+      interval: 60s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 2
+      start_period: 30s
     restart: unless-stopped
     deploy:
       resources:
@@ -86,16 +93,13 @@ services:
   search-service:
     build:
       context: ./backend/search
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile.dev
     ports:
       - "8052:8002"
     volumes:
-      - ./backend/search:/app
+      # Optimized volume mapping
+      - ./data:/app/data:rw
       - ./models:/app/models:ro
-      - ./data/embeddings:/app/data/embeddings:rw
-      - ./data/cache:/app/data/cache:rw
-      - ./data/metadata:/app/data/metadata:ro
-      - ./data/thumbnails:/app/data/thumbnails:ro
     environment:
       - PYTHONPATH=/app
       - DATABASE_URL=postgresql://postgres:password@postgres:5432/video_retrieval
@@ -105,12 +109,13 @@ services:
     depends_on:
       - postgres
       - redis
+    # Simplified health check for faster startup
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8002/health"]
-      interval: 30s
+      interval: 60s
       timeout: 10s
-      retries: 3
-      start_period: 40s
+      retries: 2
+      start_period: 30s
     restart: unless-stopped
     deploy:
       resources:
@@ -132,11 +137,12 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./infra/postgres/init.sql:/docker-entrypoint-initdb.d/init.sql
+    # Simplified health check for faster startup
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 10s
+      interval: 30s
       timeout: 5s
-      retries: 5
+      retries: 3
 
   # Redis Cache
   redis:
@@ -146,11 +152,12 @@ services:
     volumes:
       - redis_data:/data
     command: redis-server --appendonly yes
+    # Simplified health check for faster startup
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
-      interval: 10s
+      interval: 30s
       timeout: 3s
-      retries: 5
+      retries: 3
 
   # MinIO (S3-compatible storage)
   minio:
@@ -164,11 +171,12 @@ services:
     volumes:
       - minio_data:/data
     command: server /data --console-address ":9001"
+    # Simplified health check for faster startup
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
-      interval: 30s
-      timeout: 20s
-      retries: 3
+      interval: 60s
+      timeout: 10s
+      retries: 2
 
   # Prometheus Monitoring
   prometheus:
