@@ -25,10 +25,14 @@ class SearchDatabase:
     
     def _build_connection_string(self) -> str:
         """Build PostgreSQL connection string."""
-        return (
-            f"postgresql://{self.settings.DB_USER}:{self.settings.DB_PASSWORD}"
-            f"@{self.settings.DB_HOST}:{self.settings.DB_PORT}/{self.settings.DB_NAME}"
-        )
+        # Use DATABASE_URL if available, otherwise build from individual settings
+        if hasattr(self.settings, 'DATABASE_URL') and self.settings.DATABASE_URL:
+            return self.settings.DATABASE_URL
+        else:
+            return (
+                f"postgresql://{self.settings.DB_USER}:{self.settings.DB_PASSWORD}"
+                f"@{self.settings.DB_HOST}:{self.settings.DB_PORT}/{self.settings.DB_NAME}"
+            )
     
     async def connect(self):
         """Initialize database connection pool with retry logic."""

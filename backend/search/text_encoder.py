@@ -128,18 +128,52 @@ class TextEncoder:
             
         except Exception as e:
             logger.error(f"Failed to load text encoder model: {e}")
-            # Fallback to a lightweight model
+            # Fallback to CLIP model (same as ingest service)
             try:
-                model = SentenceTransformer('all-MiniLM-L6-v2', device=self.device)
-                self.models["default"] = {
-                    "model": model,
-                    "embedding_dim": model.get_sentence_embedding_dimension(),
-                    "max_length": model.max_seq_length
-                }
-                logger.info("Loaded fallback model: all-MiniLM-L6-v2")
+                if CLIP_AVAILABLE:
+                    model, preprocess = clip.load("ViT-B/32", device=self.device)
+                    logger.info("Loaded CLIP ViT-B/32 model as fallback")
+                    
+                    class CLIPTextWrapper:
+                        def __init__(self, clip_model, device):
+                            self.clip_model = clip_model
+                            self.device = device
+                            self.max_seq_length = 77  # CLIP's max text length
+                        
+                        def encode(self, texts):
+                            if isinstance(texts, str):
+                                texts = [texts]
+                            
+                            # Tokenize and encode texts
+                            text_tokens = clip.tokenize(texts).to(self.device)
+                            with torch.no_grad():
+                                text_embeddings = self.clip_model.encode_text(text_tokens)
+                                # Normalize embeddings
+                                text_embeddings = text_embeddings / text_embeddings.norm(dim=-1, keepdim=True)
+                            
+                            return text_embeddings.cpu().numpy()
+                        
+                        def get_sentence_embedding_dimension(self):
+                            return 512  # CLIP ViT-B/32 embedding dimension
+                    
+                    wrapped_model = CLIPTextWrapper(model, self.device)
+                    
+                    self.models["default"] = {
+                        "model": wrapped_model,
+                        "embedding_dim": 512,
+                        "max_length": 77
+                    }
+                    logger.info("Successfully loaded CLIP text encoder")
+                else:
+                    raise Exception("CLIP not available and sentence-transformers failed")
             except Exception as fallback_error:
-                logger.error(f"Failed to load fallback model: {fallback_error}")
+                logger.error(f"Failed to load CLIP fallback model: {fallback_error}")
                 raise
+    
+    @property
+    def is_loaded(self) -> bool:
+        """Check if text encoder models are loaded."""
+        return len(self.models) > 0 and "default" in self.models
     
     def _get_cache_key(self, text: str, model_name: str = "default") -> str:
         """Generate cache key for text embedding."""
@@ -227,21 +261,29 @@ class TextEncoder:
     
     def _encode_text_sync(
         self,
-        model: SentenceTransformer,
+        model,
         text: str,
         normalize: bool = True
     ) -> np.ndarray:
         """Synchronous text encoding."""
         with torch.no_grad():
-            # Encode text
-            embedding = model.encode(
-                text,
-                convert_to_numpy=True,
-                normalize_embeddings=normalize,
-                show_progress_bar=False
-            )
-            
-            return embedding.astype(np.float32)
+            # Check if it's our CLIP wrapper or SentenceTransformer
+            if hasattr(model, 'encode'):
+                if hasattr(model, 'clip_model'):  # Our CLIP wrapper
+                    # Use our CLIP wrapper's encode method
+                    embedding = model.encode([text])
+                    return embedding[0].astype(np.float32)
+                else:  # SentenceTransformer
+                    # Use SentenceTransformer's encode method
+                    embedding = model.encode(
+                        text,
+                        convert_to_numpy=True,
+                        normalize_embeddings=normalize,
+                        show_progress_bar=False
+                    )
+                    return embedding.astype(np.float32)
+            else:
+                raise ValueError("Model does not have encode method")
     
     async def encode_batch(
         self,
@@ -335,22 +377,30 @@ class TextEncoder:
     
     def _encode_batch_sync(
         self,
-        model: SentenceTransformer,
+        model,
         texts: List[str],
         normalize: bool = True,
         batch_size: int = 32
     ) -> List[np.ndarray]:
         """Synchronous batch text encoding."""
         with torch.no_grad():
-            embeddings = model.encode(
-                texts,
-                batch_size=batch_size,
-                convert_to_numpy=True,
-                normalize_embeddings=normalize,
-                show_progress_bar=False
-            )
-            
-            return [emb.astype(np.float32) for emb in embeddings]
+            if hasattr(model, 'encode'):
+                if hasattr(model, 'clip_model'):  # Our CLIP wrapper
+                    # Use our CLIP wrapper's encode method for batch
+                    embeddings = model.encode(texts)
+                    return [emb.astype(np.float32) for emb in embeddings]
+                else:  # SentenceTransformer
+                    # Use SentenceTransformer's encode method
+                    embeddings = model.encode(
+                        texts,
+                        batch_size=batch_size,
+                        convert_to_numpy=True,
+                        normalize_embeddings=normalize,
+                        show_progress_bar=False
+                    )
+                    return [emb.astype(np.float32) for emb in embeddings]
+            else:
+                raise ValueError("Model does not have encode method")
     
     def get_embedding_dimension(self, model_name: str = "default") -> int:
         """Get embedding dimension for a model."""

@@ -3,6 +3,7 @@ from datetime import datetime
 import json
 import time
 from typing import List, Dict, Any, Optional
+from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
@@ -62,10 +63,41 @@ reranker = CrossEncoderReranker(settings)
 boundary_regressor = BoundaryRegressor(settings)
 search_db = SearchDatabase(settings)
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # Startup
+    logger.info("Starting Video Search Service...")
+    
+    try:
+        # Models are loaded in constructors, just check if they loaded successfully
+        if not text_encoder.models:
+            raise Exception("Text encoder failed to load")
+        
+        # For now, skip loading other services until text encoder is working
+        # await ann_search.load_index()
+        # await reranker.load_model()
+        # await boundary_regressor.load_model()
+        
+        # Connect to databases
+        await search_db.connect()
+        
+        logger.info("Video Search Service initialization complete")
+        
+    except Exception as e:
+        logger.error(f"Failed to initialize service: {e}")
+        raise
+    
+    yield
+    
+    # Shutdown
+    logger.info("Shutting down Video Search Service...")
+    await search_db.disconnect()
+
 app = FastAPI(
     title="Video Search Service",
     description="Natural language video segment search service",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # Add CORS middleware
@@ -77,46 +109,19 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-@app.on_startup
-async def startup_event():
-    """Initialize services on startup"""
-    logger.info("Starting Video Search Service...")
-    
-    try:
-        # Load models
-        await text_encoder.load_model()
-        await ann_search.load_index()
-        await reranker.load_model()
-        await boundary_regressor.load_model()
-        
-        # Connect to databases
-        await search_db.connect()
-        
-        logger.info("Video Search Service initialization complete")
-        
-    except Exception as e:
-        logger.error(f"Failed to initialize service: {e}")
-        raise
-
-@app.on_shutdown
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    logger.info("Shutting down Video Search Service...")
-    await search_db.disconnect()
-
 @app.get("/health")
 async def health_check():
     """Health check endpoint"""
     return {
-        "status": "healthy",
+        "status": "healthy" if text_encoder.is_loaded else "starting",
         "timestamp": datetime.utcnow().isoformat(),
         "service": "video-search",
         "version": "1.0.0",
         "models_loaded": {
             "text_encoder": text_encoder.is_loaded,
-            "ann_search": ann_search.is_loaded,
-            "reranker": reranker.is_loaded,
-            "boundary_regressor": boundary_regressor.is_loaded
+            "ann_search": False,  # Temporarily disabled
+            "reranker": False,    # Temporarily disabled
+            "boundary_regressor": False  # Temporarily disabled
         }
     }
 

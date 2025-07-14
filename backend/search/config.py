@@ -34,6 +34,16 @@ class Settings(BaseSettings):
     REDIS_PASSWORD: Optional[str] = None
     REDIS_DB: int = 0
     
+    # Environment variable support (for Docker Compose)
+    DATABASE_URL: Optional[str] = None
+    REDIS_URL: Optional[str] = None
+    MODEL_PATH: Optional[str] = None
+    DATA_PATH: Optional[str] = None
+    FAISS_INDEX_PATH: Optional[str] = None
+    ENABLE_GPU: bool = False
+    BATCH_SIZE: int = 32
+    CACHE_TTL: int = 3600
+    
     # Model settings
     TEXT_ENCODER_MODEL: str = "sentence-transformers/all-MiniLM-L6-v2"
     RERANKER_MODEL: str = "cross-encoder/ms-marco-MiniLM-L-6-v2"
@@ -73,5 +83,5 @@ class Settings(BaseSettings):
     HEALTH_CHECK_INTERVAL: int = 60
     
     class Config:
-        env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Allow extra fields to be ignored
