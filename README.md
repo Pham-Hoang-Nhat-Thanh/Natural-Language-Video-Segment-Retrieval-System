@@ -95,55 +95,82 @@ cd services/search && pip install -r requirements.txt && python main.py
 cd frontend && npm install && npm run dev
 ```
 
-## 🏗️ Architecture
+## 🏗️ Enhanced Architecture
 
 ### System Overview
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
-│   Frontend      │────│  API Gateway    │────│  ML Services    │
-│   (Next.js)     │    │  (Node.js)      │    │  (FastAPI)      │
-└─────────────────┘    └─────────────────┘    └─────────────────┘
-                                │
-                         ┌─────────────────┐
-                         │  Vector Store   │
-                         │  (FAISS)        │
+│   Frontend      │────│  API Gateway    │────│  Enhanced ML    │
+│   (Next.js)     │    │  (Node.js)      │    │  Services       │
+│                 │    │                 │    │  (FastAPI)      │
+│ Enhanced Search │    │ Query Router    │    │ • Query Enhancer│
+│ Real-time UI    │    │ Load Balancer   │    │ • Feature Detect│
+└─────────────────┘    └─────────────────┘    │ • Multi-Modal   │
+                                │              └─────────────────┘
+                         ┌─────────────────┐           │
+                         │  Enhanced Data  │───────────┘
+                         │  • PostgreSQL   │
+                         │  • Redis Cache  │
+                         │  • FAISS Index  │
                          └─────────────────┘
 ```
 
-### Core Components
+### Enhanced Core Components
 
-1. **Offline Ingestion Pipeline**
-   - Shot detection and keyframe extraction
-   - CLIP-based embedding generation
-   - FAISS index construction
+1. **🔄 Enhanced Ingestion Pipeline**
+   - Shot detection with enhanced visual features
+   - Multi-modal keyframe extraction (objects, scenes, text)
+   - CLIP-based embeddings + enhanced feature vectors
+   - PostgreSQL storage with rich metadata
+   - FAISS index with multi-modal features
 
-2. **Online Query Pipeline**
-   - Text encoding with quantized CLIP
-   - ANN search with FAISS HNSW
-   - Cross-encoder reranking
-   - Boundary regression for precise timestamps
+2. **🧠 Intelligent Query Pipeline**
+   - **Query Enhancement**: LLM-based query expansion and refinement
+   - **Feature Detection**: Real-time visual and textual feature extraction
+   - **Semantic Search**: Context-aware embedding generation
+   - **Enhanced Reranking**: Multi-factor scoring with confidence metrics
+   - **Boundary Regression**: Precise timestamp refinement using enhanced features
 
-3. **Frontend Interface**
-   - Natural language search
-   - Video player with segment highlighting
-   - Admin performance dashboard
+3. **💡 Enhanced Frontend Interface**
+   - Natural language search with query enhancement
+   - Real-time query suggestions and improvements
+   - Video player with enhanced segment metadata
+   - Performance analytics and enhancement statistics
+   - Responsive design with advanced search options
 
 ## ✨ Features
 
-### Backend (FastAPI)
-- ✅ Simple REST API
-- ✅ CORS enabled
-- ✅ Static file serving
-- ✅ Basic text search (keyword matching)
-- ✅ Extensible architecture
-- ✅ No AI dependencies
+### 🧠 Enhanced AI-Powered Search
+- ✅ **LLM-Based Query Enhancement** - Intelligent query expansion and refinement using lightweight language models
+- ✅ **Multi-Modal Feature Detection** - Extract objects, scenes, text (OCR), and visual elements from video frames
+- ✅ **Context-Aware Search** - Understanding temporal context, scene transitions, and action sequences
+- ✅ **Template-Based Fallbacks** - Robust fallback mechanisms when advanced AI models are unavailable
 
-### Frontend (React + Vite)
-- ✅ Clean, responsive UI
-- ✅ Real-time search
-- ✅ Results display
-- ✅ Error handling
-- ✅ Status monitoring
+### 🎯 Advanced Video Processing
+- ✅ **Enhanced Feature Extraction** - Object detection, scene classification, and OCR during ingestion
+- ✅ **Smart Shot Detection** - Improved boundary detection with enhanced visual features
+- ✅ **Multi-Modal Embeddings** - Combined visual, textual, and semantic embeddings for better accuracy
+- ✅ **Keyframe Enhancement** - Rich feature extraction from key video frames
+
+### 🔍 Intelligent Search Pipeline
+- ✅ **Semantic Query Understanding** - Analyze query intent, entities, and context
+- ✅ **Enhanced Reranking** - Multi-factor reranking using both original and enhanced queries
+- ✅ **Boundary Regression** - Precise timestamp refinement using enhanced features
+- ✅ **Adaptive Thresholding** - Dynamic confidence scoring based on query complexity
+
+### 🚀 Backend (FastAPI)
+- ✅ **Enhanced REST APIs** - `/api/search/enhanced` and `/api/query/enhance` endpoints
+- ✅ **Redis Caching** - Intelligent caching for query enhancements and features
+- ✅ **PostgreSQL Integration** - Enhanced schema for multi-modal feature storage
+- ✅ **FAISS Vector Search** - Optimized approximate nearest neighbor search
+- ✅ **Graceful Degradation** - Fallbacks when enhanced features unavailable
+
+### 💡 Frontend (Next.js + React)
+- ✅ **Enhanced Search Interface** - Support for enhanced search with query analysis
+- ✅ **Real-Time Query Enhancement** - Live query improvement suggestions
+- ✅ **Advanced Results Display** - Enhanced metadata and confidence scores
+- ✅ **Performance Analytics** - Query enhancement statistics and metrics
+- ✅ **Responsive Design** - Clean, modern UI with enhanced functionality
 
 ## 🚀 Quick Start
 

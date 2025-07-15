@@ -23,25 +23,38 @@ backend/
   - Request routing to microservices
   - Swagger documentation
 
-### Ingestion Service (`ingest/`)
+### Enhanced Ingestion Service (`ingest/`)
 - **Technology**: Python + FastAPI
 - **Port**: 8001
 - **Purpose**:
   - Video upload and validation
   - Shot boundary detection (TransNetV2)
-  - Keyframe extraction
-  - Multimodal embedding generation (CLIP)
-  - Metadata storage
+  - Enhanced keyframe extraction with multi-modal analysis
+  - **🧠 NEW: Enhanced Feature Extraction**:
+    - Object detection using YOLO/DETR models (optional)
+    - Scene classification with visual context analysis
+    - OCR text extraction from video frames (EasyOCR)
+    - Color histogram and visual feature analysis
+  - Multi-modal embedding generation (CLIP + enhanced features)
+  - PostgreSQL metadata storage with rich feature data
 
-### Search Service (`search/`)
+### Enhanced Search Service (`search/`)
 - **Technology**: Python + FastAPI
 - **Port**: 8002
 - **Purpose**:
-  - Text encoding for queries
-  - FAISS-based approximate nearest neighbor search
-  - Cross-encoder reranking
-  - Neural boundary regression
-  - Result ranking and filtering
+  - **🧠 NEW: LLM-Based Query Enhancement**:
+    - Intelligent query expansion using lightweight language models
+    - Context-aware query analysis (entities, actions, temporal context)
+    - Template-based fallbacks for improved query structuring
+    - Redis caching for enhanced query results
+  - Enhanced text encoding for queries with semantic understanding
+  - FAISS-based approximate nearest neighbor search with multi-modal embeddings
+  - Enhanced cross-encoder reranking with confidence scoring
+  - Neural boundary regression with enhanced feature integration
+  - **NEW API Endpoints**:
+    - `/api/search/enhanced` - Advanced search with query enhancement
+    - `/api/query/enhance` - Standalone query improvement service
+  - Intelligent result ranking and filtering with multi-factor scoring
 
 ## 🛠️ Development
 

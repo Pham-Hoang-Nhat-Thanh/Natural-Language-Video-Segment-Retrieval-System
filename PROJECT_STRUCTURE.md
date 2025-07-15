@@ -27,10 +27,18 @@ This document describes the layout of the Natural Language Video Segment Retriev
 │   ├── api-gateway/            # Node.js API Gateway (Fastify)
 │   │   └── src/app.js          # Main gateway application
 │   ├── ingest/                 # Video ingestion service (FastAPI)
-│   │   └── main.py             # Ingestion entry point
-│   └── search/                 # Video search service (FastAPI)
-│       └── main.py             # Search entry point
-└── data/                       # Data storage (videos, thumbnails, metadata, embeddings)
+│   │   ├── main.py             # Ingestion entry point
+│   │   ├── enhanced_feature_detector.py  # Multi-modal feature extraction (NEW)
+│   │   └── migrations/         # Database migrations including enhanced schema
+│   └── search/                 # Enhanced video search service (FastAPI)
+│       ├── main.py             # Search entry point with enhanced endpoints
+│       ├── query_enhancer.py   # LLM-based query enhancement (NEW)
+│       ├── enhanced_feature_detector.py  # Multi-modal feature detection (NEW)
+│       └── requirements.txt    # Enhanced dependencies (consolidated)
+├── data/                       # Data storage (videos, thumbnails, metadata, embeddings)
+├── demo_enhanced_system.py     # Enhanced system demonstration (NEW)
+├── validate_imports.py         # Import validation utility (NEW)
+└── test_integration.py         # Enhanced system integration tests (NEW)
 ```
 
 ## Technology Stack
@@ -42,10 +50,13 @@ This document describes the layout of the Natural Language Video Segment Retriev
 - **Video Player**: Video.js or custom HTML5 player
 
 ### Backend Services
-- **API Gateway**: Node.js + Fastify
-- **ML Services**: Python + FastAPI
-- **Vector Store**: FAISS with HNSW indexing
-- **Models**: ONNX Runtime with quantized CLIP
+- **API Gateway**: Node.js + Fastify with enhanced routing
+- **Enhanced ML Services**: Python + FastAPI with AI-powered features
+  - **Query Enhancement**: LLM-based query expansion and refinement
+  - **Multi-Modal Detection**: Object detection, scene classification, OCR
+  - **Feature Extraction**: Enhanced visual and textual feature analysis
+- **Vector Store**: FAISS with HNSW indexing + enhanced embeddings
+- **Models**: ONNX Runtime with quantized CLIP + optional YOLO/EasyOCR
 
 ### Infrastructure
 - **Containerization**: Docker + Docker Compose

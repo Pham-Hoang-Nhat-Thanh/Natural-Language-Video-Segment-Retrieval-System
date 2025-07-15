@@ -2,21 +2,27 @@
 
 A modern, responsive frontend for natural language video segment search and retrieval.
 
-## 🎯 Features
+## 🎯 Enhanced Features
 
-### Search Interface
-- **Prominent search bar** with real-time debounced search
-- **Auto-complete on typing** (300ms debounce)
-- **Keyboard submission** support (Enter key)
-- **Loading states** and visual feedback
+### 🧠 Enhanced Search Interface (NEW)
+- **AI-Powered Query Enhancement** with real-time query improvement suggestions
+- **Smart Auto-complete** with context-aware suggestions (300ms debounce)
+- **Enhanced Search Results** showing query analysis and confidence scores
+- **Multi-Modal Search** leveraging visual, textual, and semantic features
+- **Query Analytics** with enhancement statistics and performance metrics
+- **Prominent search bar** with enhanced visual feedback
+- **Keyboard submission** support (Enter key) with enhanced query processing
+- **Loading states** with enhanced search progress indicators
 - **Accessibility features** with ARIA labels and focus management
 
-### Results Display
+### Enhanced Results Display
 - **Responsive grid layout** (1-4 columns based on screen size)
-- **Thumbnail previews** for each video segment
-- **Relevance scoring** with visual indicators
-- **Hover effects** and focus states
-- **Click-to-play** functionality
+- **Enhanced thumbnail previews** with detected objects and scene information
+- **Multi-factor relevance scoring** with enhanced confidence indicators
+- **Rich metadata display** showing extracted features (objects, scenes, text)
+- **Query enhancement feedback** showing original vs. enhanced queries
+- **Hover effects** and focus states with enhanced information tooltips
+- **Click-to-play** functionality with enhanced segment metadata
 
 ### Video Player Integration
 - **Modern HTML5 video player** with custom controls

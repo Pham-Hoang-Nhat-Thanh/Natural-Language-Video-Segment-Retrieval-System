@@ -54,11 +54,16 @@ The ingestion service does not auto-scan on startup. To process videos:
   ```
 
 The endpoint returns a 202 Accepted and begins asynchronous processing:
-- Shot detection
-- Keyframe extraction
+- Shot detection with enhanced visual features
+- Keyframe extraction with multi-modal analysis
+- **🧠 Enhanced Feature Extraction (NEW)**:
+  - Object detection (YOLO/DETR models when available)
+  - Scene classification with visual context
+  - OCR text extraction from video frames
+  - Color histogram and visual feature analysis
 - Thumbnail generation
-- Embedding creation
-- Metadata storage
+- **Enhanced embedding creation** with multi-modal features
+- Metadata storage in PostgreSQL with rich feature data
 
 ## 4. Check Processing Status
 - **All videos**: `GET http://localhost:8000/api/videos/status` returns status of each video
@@ -67,17 +72,55 @@ The endpoint returns a 202 Accepted and begins asynchronous processing:
 ## 5. Search Video Segments
 Once videos are processed and embeddings are in place, search via web UI or API:
 
-### Web Interface
-- Open `http://localhost:3000` in your browser
-- Enter a natural language query (e.g., "dog playing fetch")
-- Click **Search**, view matching segments with thumbnails and timestamps
+### 🧠 Enhanced Search Features (NEW)
+The system now includes advanced AI-powered search capabilities:
 
-### API
+#### Web Interface
+- Open `http://localhost:3000` in your browser
+- **Enhanced Search**: Use the improved search with automatic query enhancement
+- **Query Suggestions**: Get real-time query improvement suggestions
+- **Advanced Results**: View enhanced metadata including objects, scenes, and confidence scores
+- Enter natural language queries like:
+  - "dog playing fetch in the park" → Enhanced to include scene context
+  - "sunset on beach" → Expanded with related visual and temporal elements
+  - "car driving through city" → Enhanced with action and location understanding
+
+#### Standard Search API
 ```bash
 curl -X POST http://localhost:8000/api/search \
   -H "Content-Type: application/json" \
   -d '{"query": "beach sunset", "limit": 5}'
 ```
+
+#### 🚀 Enhanced Search API (NEW)
+```bash
+curl -X POST http://localhost:8000/api/search/enhanced \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "beach sunset", 
+    "top_k": 5, 
+    "use_llm_enhancement": true,
+    "threshold": 0.5
+  }'
+```
+
+#### Query Enhancement API (NEW)
+```bash
+curl -X POST http://localhost:8000/api/query/enhance \
+  -H "Content-Type: application/json" \
+  -d '{
+    "query": "beach sunset",
+    "use_llm": true
+  }'
+```
+
+#### Enhanced Response Format
+All enhanced search responses now include:
+- `video_id`, `start_time`, `end_time` (standard)
+- `thumbnail_url` (standard)
+- `enhanced_query_used` - The improved query that was actually searched
+- `query_analysis` - Detected entities, actions, scene context, and confidence
+- `enhanced_features` - Objects, scenes, and text detected in the video segment
 Response contains top matching segments with:
 - `video_id`
 - `start_time` / `end_time`
