@@ -69,7 +69,8 @@ class TextEncoder:
                 if model_files:
                     # Use the first available model
                     model_file = model_files[0]
-                    model_name = model_file.stem.replace("-", "/")  # Convert ViT-B-32.pt to ViT-B/32
+                    # Convert ViT-B-32.pt to ViT-B/32 (keep hyphens in model name, only replace last part)
+                    model_name = model_file.stem.replace("ViT-B-32", "ViT-B/32").replace("ViT-B-16", "ViT-B/16").replace("ViT-L-14", "ViT-L/14")
                     
                     logger.info(f"Loading CLIP model: {model_name} from {model_file}")
                     model, preprocess = clip.load(model_name, device=device, download_root=str(local_model_path.parent))

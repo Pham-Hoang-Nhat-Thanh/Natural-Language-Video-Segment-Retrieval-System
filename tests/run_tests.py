@@ -30,7 +30,7 @@ def setup_test_environment():
     
     # Start test services with Docker Compose
     subprocess.run([
-        "docker-compose", "-f", "docker-compose.test.yml", "up", "-d"
+        "docker", "compose", "-f", "docker-compose.test.yml", "up", "-d"
     ], check=True)
     
     # Wait for services to be ready
@@ -70,7 +70,7 @@ def cleanup_test_environment():
     """Cleanup the test environment."""
     print("🧹 Cleaning up test environment...")
     subprocess.run([
-        "docker-compose", "-f", "docker-compose.test.yml", "down", "-v"
+        "docker", "compose", "-f", "docker-compose.test.yml", "down", "-v"
     ])
 
 def main():
