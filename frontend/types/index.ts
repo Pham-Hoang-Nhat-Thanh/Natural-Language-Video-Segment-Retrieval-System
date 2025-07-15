@@ -13,51 +13,64 @@ export interface VideoSegment {
   description: string
   transcript?: string
   score: number
+  enhancedQueryUsed?: string
 }
 
 export interface SearchResult {
   results: VideoSegment[]
   query_time_ms: number
   total_results: number
+  originalQuery?: string
+  enhancedQuery?: string
+  queryAnalysis?: QueryAnalysis
 }
 
 export interface SearchRequest {
   query: string
   top_k?: number
   threshold?: number
+  use_query_enhancement?: boolean
 }
 
-export interface VideoPlayerProps {
-  videoUrl?: string
-  currentSegment?: VideoSegment | null
-  autoplay?: boolean
-  onTimeUpdate?: (currentTime: number) => void
-  onLoadedMetadata?: (duration: number) => void
+export interface EnhancedSearchRequest {
+  query: string
+  top_k?: number
+  threshold?: number
+  use_llm_enhancement?: boolean
+  search_weights?: SearchWeights
 }
 
-export interface SearchBarProps {
-  onSearch: (query: string) => void
-  isLoading?: boolean
-  placeholder?: string
-  autoFocus?: boolean
+export interface SearchWeights {
+  visual?: number
+  audio?: number
+  text?: number
+  metadata?: number
 }
 
-export interface SegmentItemProps {
-  segment: VideoSegment
-  isActive?: boolean
-  onClick: (segment: VideoSegment) => void
-  showScore?: boolean
+export interface QueryAnalysis {
+  type: string
+  entities: string[]
+  actions: string[]
+  scene_context: string[]
+  temporal_context: string[]
+  confidence: number
 }
 
-export interface SegmentListProps {
-  segments: VideoSegment[]
-  activeSegmentId?: string | null
-  onSegmentClick: (segment: VideoSegment) => void
-  isLoading?: boolean
-  showScores?: boolean
+export interface QueryEnhancement {
+  originalQuery: string
+  enhancedQuery: string
+  queryType: string
+  entities: string[]
+  actions: string[]
+  sceneContext: string[]
+  temporalContext: string[]
+  confidence: number
 }
 
-// Legacy types for backward compatibility
+/**
+ * Legacy types for backward compatibility
+ */
+
 export interface LegacySearchResult {
   video_id: string
   video_path: string

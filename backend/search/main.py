@@ -1,15 +1,13 @@
 import logging
 from datetime import datetime
-import json
 import time
 from typing import List, Dict, Any, Optional
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
-import asyncio
 
 from config import Settings
 from text_encoder import TextEncoder
@@ -17,6 +15,7 @@ from ann_search import ANNSearchEngine
 from reranker import CrossEncoderReranker
 from boundary_regressor import BoundaryRegressor
 from database import SearchDatabase
+from query_enhancer import LightweightQueryEnhancer
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -30,6 +29,14 @@ class SearchRequest(BaseModel):
     query: str
     top_k: int = 10
     threshold: float = 0.5
+    use_query_enhancement: bool = True
+
+class EnhancedSearchRequest(BaseModel):
+    query: str
+    top_k: int = 10
+    threshold: float = 0.5
+    use_llm_enhancement: bool = True
+    search_weights: Optional[Dict[str, float]] = None
 
 class SearchResult(BaseModel):
     video_id: str
@@ -39,11 +46,15 @@ class SearchResult(BaseModel):
     thumbnail_url: str
     title: str
     description: Optional[str] = None
+    enhanced_query_used: Optional[str] = None
 
 class SearchResponse(BaseModel):
     results: List[SearchResult]
     query_time_ms: float
     total_results: int
+    original_query: str
+    enhanced_query: Optional[str] = None
+    query_analysis: Optional[Dict] = None
 
 class TextEmbedRequest(BaseModel):
     text: str
@@ -53,8 +64,15 @@ class RerankRequest(BaseModel):
     candidates: List[Dict[str, Any]]
 
 class RegressionRequest(BaseModel):
-    video_segments: List[Dict[str, Any]]
-    query_embedding: List[float]
+    video_id: str
+    start_time: float
+    end_time: float
+    query: str
+
+class QueryEnhancementRequest(BaseModel):
+    query: str
+    context: Optional[Dict] = None
+    use_llm: bool = True
 
 # Initialize services with full settings
 text_encoder = TextEncoder(settings)
@@ -62,6 +80,7 @@ ann_search = ANNSearchEngine(settings)
 reranker = CrossEncoderReranker(settings)
 boundary_regressor = BoundaryRegressor(settings)
 search_db = SearchDatabase(settings)
+query_enhancer = LightweightQueryEnhancer(settings)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -128,15 +147,37 @@ async def health_check():
 @app.post("/api/search", response_model=SearchResponse)
 async def search_videos(request: SearchRequest):
     """
-    Main search endpoint - performs complete search pipeline
+    Main search endpoint - performs complete search pipeline with optional query enhancement
     """
     start_time = time.time()
     
     try:
-        logger.info(f"Search request: '{request.query}' (top_k={request.top_k})")
+        logger.info(f"Search request: '{request.query}' (top_k={request.top_k}, enhancement={request.use_query_enhancement})")
         
-        # Step 1: Encode query text
-        query_embedding = await text_encoder.encode_text(request.query)
+        # Step 1: Optionally enhance the query
+        query_to_use = request.query
+        enhanced_query = None
+        query_analysis_info = None
+        
+        if request.use_query_enhancement:
+            try:
+                enhanced_analysis = await query_enhancer.enhance_query(
+                    request.query, 
+                    use_llm=False  # Use template-based enhancement for faster response
+                )
+                query_to_use = enhanced_analysis.enhanced_query
+                enhanced_query = enhanced_analysis.enhanced_query
+                query_analysis_info = {
+                    "type": enhanced_analysis.query_type,
+                    "entities": enhanced_analysis.entities,
+                    "confidence": enhanced_analysis.confidence
+                }
+                logger.info(f"Using enhanced query: '{query_to_use}'")
+            except Exception as e:
+                logger.warning(f"Query enhancement failed, using original: {e}")
+        
+        # Step 2: Encode query text (enhanced or original)
+        query_embedding = await text_encoder.encode_text(query_to_use)
         
         # Step 2: ANN search for candidates
         candidates = await ann_search.search(
@@ -193,12 +234,160 @@ async def search_videos(request: SearchRequest):
         return SearchResponse(
             results=results,
             query_time_ms=query_time,
-            total_results=len(results)
+            total_results=len(results),
+            original_query=request.query,
+            enhanced_query=enhanced_query,
+            query_analysis=query_analysis_info
         )
         
     except Exception as e:
         logger.error(f"Search failed: {str(e)}")
         raise HTTPException(status_code=500, detail=f"Search failed: {str(e)}")
+
+@app.post("/api/search/enhanced")
+async def enhanced_search_videos(request: EnhancedSearchRequest):
+    """
+    Enhanced search endpoint with query enhancement and multi-modal features
+    """
+    start_time = time.time()
+    
+    try:
+        logger.info(f"Enhanced search request: '{request.query}' (top_k={request.top_k})")
+        
+        # Step 1: Enhance the query using our query enhancer
+        enhanced_analysis = await query_enhancer.enhance_query(
+            request.query, 
+            use_llm=request.use_llm_enhancement
+        )
+        
+        logger.info(f"Enhanced query: '{enhanced_analysis.enhanced_query}'")
+        logger.info(f"Query analysis: {enhanced_analysis.query_type}, entities: {enhanced_analysis.entities}")
+        
+        # Step 2: Encode enhanced query text
+        query_embedding = await text_encoder.encode_text(enhanced_analysis.enhanced_query)
+        
+        # Step 3: ANN search for candidates with enhanced embedding
+        candidates = await ann_search.search(
+            query_embedding, 
+            top_k=min(request.top_k * 5, 100)  # Get more candidates for reranking
+        )
+        
+        if not candidates:
+            return SearchResponse(
+                results=[],
+                query_time_ms=(time.time() - start_time) * 1000,
+                total_results=0,
+                original_query=request.query,
+                enhanced_query=enhanced_analysis.enhanced_query,
+                query_analysis={
+                    "type": enhanced_analysis.query_type,
+                    "entities": enhanced_analysis.entities,
+                    "actions": enhanced_analysis.actions,
+                    "confidence": enhanced_analysis.confidence
+                }
+            )
+        
+        # Step 4: Enhanced reranking with both original and enhanced queries
+        reranked_candidates = await reranker.rerank(
+            enhanced_analysis.enhanced_query, 
+            candidates[:50]  # Limit for reranking performance
+        )
+        
+        # Step 5: Boundary regression for top candidates
+        top_candidates = reranked_candidates[:request.top_k]
+        refined_segments = await boundary_regressor.refine_boundaries(
+            top_candidates, 
+            query_embedding
+        )
+        
+        # Step 6: Format results with enhanced information
+        results = []
+        for segment in refined_segments:
+            if segment['score'] >= request.threshold:
+                result = SearchResult(
+                    video_id=segment['video_id'],
+                    start_time=segment['start_time'],
+                    end_time=segment['end_time'],
+                    score=segment['score'],
+                    thumbnail_url=f"/static/thumbnails/{segment['video_id']}/frame_{int(segment['start_time'])}.jpg",
+                    title=segment.get('title', f"Video {segment['video_id']}"),
+                    description=segment.get('description'),
+                    enhanced_query_used=enhanced_analysis.enhanced_query
+                )
+                results.append(result)
+        
+        query_time = (time.time() - start_time) * 1000
+        
+        # Log enhanced search metrics
+        await search_db.log_search_metrics(
+            query=f"[ENHANCED] {request.query} -> {enhanced_analysis.enhanced_query}",
+            results_count=len(results),
+            query_time_ms=query_time
+        )
+        
+        logger.info(f"Enhanced search completed: {len(results)} results in {query_time:.1f}ms")
+        
+        return SearchResponse(
+            results=results,
+            query_time_ms=query_time,
+            total_results=len(results),
+            original_query=request.query,
+            enhanced_query=enhanced_analysis.enhanced_query,
+            query_analysis={
+                "type": enhanced_analysis.query_type,
+                "entities": enhanced_analysis.entities,
+                "actions": enhanced_analysis.actions,
+                "scene_context": enhanced_analysis.scene_context,
+                "temporal_context": enhanced_analysis.temporal_context,
+                "confidence": enhanced_analysis.confidence
+            }
+        )
+        
+    except Exception as e:
+        logger.error(f"Enhanced search failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Enhanced search failed: {str(e)}")
+
+@app.post("/api/query/enhance")
+async def enhance_query_endpoint(request: QueryEnhancementRequest):
+    """
+    Standalone query enhancement endpoint
+    """
+    try:
+        enhanced_analysis = await query_enhancer.enhance_query(
+            request.query,
+            context=request.context,
+            use_llm=request.use_llm
+        )
+        
+        return {
+            "original_query": request.query,
+            "enhanced_query": enhanced_analysis.enhanced_query,
+            "query_type": enhanced_analysis.query_type,
+            "entities": enhanced_analysis.entities,
+            "actions": enhanced_analysis.actions,
+            "scene_context": enhanced_analysis.scene_context,
+            "temporal_context": enhanced_analysis.temporal_context,
+            "confidence": enhanced_analysis.confidence
+        }
+        
+    except Exception as e:
+        logger.error(f"Query enhancement failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Query enhancement failed: {str(e)}")
+
+@app.get("/api/query/stats")
+async def get_query_enhancement_stats():
+    """
+    Get query enhancement statistics and model status
+    """
+    try:
+        stats = query_enhancer.get_stats()
+        return {
+            "enhancement_stats": stats,
+            "status": "operational" if stats["model_loaded"] else "limited"
+        }
+    except Exception as e:
+        logger.error(f"Failed to get enhancement stats: {str(e)}")
+        return {"error": str(e), "status": "error"}
 
 @app.post("/api/embed/text")
 async def embed_text(request: TextEmbedRequest):

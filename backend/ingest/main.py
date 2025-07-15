@@ -7,7 +7,6 @@ from pathlib import Path
 from contextlib import asynccontextmanager
 from datetime import datetime
 import asyncio
-import glob
 import time
 import logging
 import psutil
@@ -21,6 +20,19 @@ from config import Settings
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import enhanced feature detector from search service
+import sys
+from pathlib import Path
+search_service_path = Path(__file__).parent.parent / "search"
+sys.path.insert(0, str(search_service_path))
+
+try:
+    from enhanced_feature_detector import EnhancedFeatureDetector
+    ENHANCED_FEATURES_AVAILABLE = True
+except ImportError:
+    logger.warning("Enhanced feature detector not available - using basic features only")
+    ENHANCED_FEATURES_AVAILABLE = False
 
 # Load settings
 settings = Settings()
@@ -38,6 +50,16 @@ shot_detector = ShotDetector()
 keyframe_extractor = KeyframeExtractor()
 embedding_service = EmbeddingService(settings.model_path)
 db_manager = DatabaseManager(settings.database_url)
+
+# Initialize enhanced feature detector if available
+enhanced_feature_detector = None
+if ENHANCED_FEATURES_AVAILABLE:
+    try:
+        enhanced_feature_detector = EnhancedFeatureDetector(settings)
+        logger.info("Enhanced feature detector initialized successfully")
+    except Exception as e:
+        logger.warning(f"Failed to initialize enhanced feature detector: {e}")
+        ENHANCED_FEATURES_AVAILABLE = False
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -218,9 +240,23 @@ async def process_video(video_id: str):
         embeddings = await embedding_service.generate_embeddings(keyframes)
         logger.info(f"Generated {len(embeddings)} embeddings")
         
-        # Step 4: Store in Database and Vector Index
+        # Step 4: Extract Enhanced Features (if available)
+        enhanced_features = {}
+        if ENHANCED_FEATURES_AVAILABLE and enhanced_feature_detector:
+            logger.info("Extracting enhanced features...")
+            try:
+                for i, keyframe in enumerate(keyframes):
+                    # Extract enhanced features for each keyframe
+                    features = await enhanced_feature_detector.extract_features(keyframe['image_path'])
+                    enhanced_features[f"keyframe_{i}"] = features
+                logger.info(f"Extracted enhanced features for {len(enhanced_features)} keyframes")
+            except Exception as e:
+                logger.warning(f"Enhanced feature extraction failed: {e}")
+                enhanced_features = {}
+        
+        # Step 5: Store in Database and Vector Index
         logger.info("Storing data...")
-        await db_manager.store_video_data(video_id, shots, keyframes, embeddings)
+        await db_manager.store_video_data(video_id, shots, keyframes, embeddings, enhanced_features)
         
         logger.info(f"Processing complete for video: {video_id}")
         

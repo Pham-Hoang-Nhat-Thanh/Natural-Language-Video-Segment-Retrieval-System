@@ -418,87 +418,27 @@ fastify.post('/api/search', {
   }
 });
 
-// Text embedding endpoint
-fastify.post('/api/embed/text', {
+// Enhanced search endpoint
+fastify.post('/api/search/enhanced', {
+  preHandler: [rateLimit(50, 60000)], // 50 requests per minute
   schema: {
-    description: 'Generate text embeddings using CLIP model',
+    description: 'Enhanced video segment search with query improvement and multi-modal features',
     body: {
       type: 'object',
-      required: ['text'],
+      required: ['query'],
       properties: {
-        text: { type: 'string', description: 'Text to embed' }
-      }
-    },
-    response: {
-      200: {
-        type: 'object',
-        properties: {
-          embedding: {
-            type: 'array',
-            items: { type: 'number' },
-            description: 'Text embedding vector'
-          },
-          dimension: { type: 'number' },
-          model: { type: 'string' }
-        }
-      }
-    }
-  }
-}, async (request, reply) => {
-  try {
-    const response = await axios.post(`${config.searchServiceUrl}/api/embed/text`, request.body);
-    return response.data;
-  } catch (error) {
-    fastify.log.error('Text embedding error:', error);
-    return reply.code(500).send({ error: 'Failed to generate embeddings' });
-  }
-});
-
-// Video embedding endpoint
-fastify.post('/api/embed/video', {
-  schema: {
-    description: 'Generate video embeddings from keyframes',
-    body: {
-      type: 'object',
-      required: ['video_id'],
-      properties: {
-        video_id: { type: 'string' },
-        keyframes: {
-          type: 'array',
-          items: { type: 'string' }
-        }
-      }
-    }
-  }
-}, async (request, reply) => {
-  try {
-    const response = await axios.post(`${config.searchServiceUrl}/api/embed/video`, request.body);
-    return response.data;
-  } catch (error) {
-    fastify.log.error('Video embedding error:', error);
-    return reply.code(500).send({ error: 'Failed to generate video embeddings' });
-  }
-});
-
-// Reranking endpoint
-fastify.post('/api/rerank', {
-  schema: {
-    description: 'Rerank search results using cross-encoder',
-    body: {
-      type: 'object',
-      required: ['query', 'candidates'],
-      properties: {
-        query: { type: 'string' },
-        candidates: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              video_id: { type: 'string' },
-              start_time: { type: 'number' },
-              end_time: { type: 'number' },
-              score: { type: 'number' }
-            }
+        query: { type: 'string', description: 'Natural language search query' },
+        top_k: { type: 'number', default: 10, description: 'Number of results to return' },
+        threshold: { type: 'number', default: 0.5, description: 'Minimum relevance score' },
+        use_llm_enhancement: { type: 'boolean', default: true, description: 'Use LLM for query enhancement' },
+        search_weights: {
+          type: 'object',
+          description: 'Custom weights for different search modalities',
+          properties: {
+            visual: { type: 'number' },
+            audio: { type: 'number' },
+            text: { type: 'number' },
+            metadata: { type: 'number' }
           }
         }
       }
@@ -507,7 +447,7 @@ fastify.post('/api/rerank', {
       200: {
         type: 'object',
         properties: {
-          reranked_results: {
+          results: {
             type: 'array',
             items: {
               type: 'object',
@@ -515,8 +455,26 @@ fastify.post('/api/rerank', {
                 video_id: { type: 'string' },
                 start_time: { type: 'number' },
                 end_time: { type: 'number' },
-                score: { type: 'number' }
+                score: { type: 'number' },
+                thumbnail_url: { type: 'string' },
+                title: { type: 'string' },
+                description: { type: 'string' },
+                enhanced_query_used: { type: 'string' }
               }
+            }
+          },
+          query_time_ms: { type: 'number' },
+          total_results: { type: 'number' },
+          original_query: { type: 'string' },
+          enhanced_query: { type: 'string' },
+          query_analysis: {
+            type: 'object',
+            properties: {
+              type: { type: 'string' },
+              entities: { type: 'array', items: { type: 'string' } },
+              actions: { type: 'array', items: { type: 'string' } },
+              scene_context: { type: 'array', items: { type: 'string' } },
+              confidence: { type: 'number' }
             }
           }
         }
@@ -524,49 +482,127 @@ fastify.post('/api/rerank', {
     }
   }
 }, async (request, reply) => {
+  const startTime = Date.now();
+  
   try {
-    const response = await axios.post(`${config.searchServiceUrl}/api/rerank`, request.body);
-    return response.data;
+    const { query, top_k = 10, threshold = 0.5, use_llm_enhancement = true, search_weights } = request.body;
+    
+    // Generate cache key for enhanced search
+    const cacheKey = `enhanced_search:${JSON.stringify({query, top_k, threshold, use_llm_enhancement})}`;
+    
+    // Check cache first
+    const cached = await redis.get(cacheKey);
+    if (cached) {
+      const result = JSON.parse(cached);
+      result.cached = true;
+      return result;
+    }
+
+    // Call enhanced search service
+    const response = await axios.post(`${config.searchServiceUrl}/api/search/enhanced`, {
+      query,
+      top_k,
+      threshold,
+      use_llm_enhancement,
+      search_weights
+    });
+
+    const result = response.data;
+    result.query_time_ms = Date.now() - startTime;
+
+    // Cache result for 5 minutes
+    await redis.setex(cacheKey, 300, JSON.stringify(result));
+
+    return result;
   } catch (error) {
-    fastify.log.error('Reranking error:', error);
-    return reply.code(500).send({ error: 'Failed to rerank results' });
+    fastify.log.error('Enhanced search error:', error);
+    return reply.code(500).send({ 
+      error: 'Enhanced search failed',
+      query_time_ms: Date.now() - startTime
+    });
   }
 });
 
-// Boundary regression endpoint
-fastify.post('/api/regress', {
+// Query enhancement endpoint
+fastify.post('/api/query/enhance', {
+  preHandler: [rateLimit(100, 60000)], // 100 requests per minute
   schema: {
-    description: 'Refine segment boundaries using regression model',
+    description: 'Enhance a search query for better results',
     body: {
       type: 'object',
-      required: ['video_segments', 'query_embedding'],
+      required: ['query'],
       properties: {
-        video_segments: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              video_id: { type: 'string' },
-              start_time: { type: 'number' },
-              end_time: { type: 'number' },
-              score: { type: 'number' }
-            }
-          }
+        query: { type: 'string', description: 'Original search query' },
+        context: { 
+          type: 'object', 
+          description: 'Optional context for enhancement',
+          additionalProperties: true
         },
-        query_embedding: {
-          type: 'array',
-          items: { type: 'number' }
+        use_llm: { type: 'boolean', default: true, description: 'Use LLM for enhancement' }
+      }
+    },
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          original_query: { type: 'string' },
+          enhanced_query: { type: 'string' },
+          query_type: { type: 'string' },
+          entities: { type: 'array', items: { type: 'string' } },
+          actions: { type: 'array', items: { type: 'string' } },
+          scene_context: { type: 'array', items: { type: 'string' } },
+          temporal_context: { type: 'array', items: { type: 'string' } },
+          confidence: { type: 'number' }
         }
       }
     }
   }
 }, async (request, reply) => {
   try {
-    const response = await axios.post(`${config.searchServiceUrl}/api/regress`, request.body);
+    const response = await axios.post(`${config.searchServiceUrl}/api/query/enhance`, request.body);
     return response.data;
   } catch (error) {
-    fastify.log.error('Boundary regression error:', error);
-    return reply.code(500).send({ error: 'Failed to regress boundaries' });
+    fastify.log.error('Query enhancement error:', error);
+    return reply.code(500).send({ error: 'Query enhancement failed' });
+  }
+});
+
+// Query enhancement stats endpoint
+fastify.get('/api/query/stats', {
+  schema: {
+    description: 'Get query enhancement statistics and model status',
+    response: {
+      200: {
+        type: 'object',
+        properties: {
+          enhancement_stats: {
+            type: 'object',
+            properties: {
+              model_loaded: { type: 'boolean' },
+              cache_available: { type: 'boolean' },
+              rules_count: {
+                type: 'object',
+                properties: {
+                  objects: { type: 'number' },
+                  actions: { type: 'number' },
+                  scenes: { type: 'number' },
+                  temporal: { type: 'number' }
+                }
+              }
+            }
+          },
+          status: { type: 'string' }
+        }
+      }
+    }
+  }
+}, async (request, reply) => {
+  try {
+    const response = await axios.get(`${config.searchServiceUrl}/api/query/stats`);
+    return response.data;
+  } catch (error) {
+    fastify.log.error('Query stats error:', error);
+    return reply.code(500).send({ error: 'Failed to get query stats' });
   }
 });
 

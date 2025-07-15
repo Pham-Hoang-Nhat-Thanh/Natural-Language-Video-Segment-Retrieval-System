@@ -5,8 +5,7 @@ import numpy as np
 import asyncio
 from typing import List, Dict, Optional, Any
 import logging
-from datetime import datetime, timezone
-from contextlib import asynccontextmanager
+from datetime import datetime
 import time
 
 from shot_detector import Shot
@@ -169,6 +168,7 @@ class DatabaseManager:
                              shots: List[Shot], 
                              keyframes: List[Keyframe], 
                              embeddings: List[Embedding],
+                             enhanced_features: Optional[Dict] = None,
                              video_metadata: Optional[Dict] = None) -> bool:
         """
         Store complete video processing data
@@ -178,6 +178,8 @@ class DatabaseManager:
             shots: List of detected shots
             keyframes: List of extracted keyframes
             embeddings: List of generated embeddings
+            enhanced_features: Dictionary of enhanced features per keyframe
+            video_metadata: Optional video metadata
             video_metadata: Additional video metadata
         
         Returns:
@@ -198,6 +200,10 @@ class DatabaseManager:
                     
                     # Store embeddings
                     await self._store_embeddings(conn, embeddings)
+                    
+                    # Store enhanced features if available
+                    if enhanced_features:
+                        await self._store_enhanced_features(conn, video_id, enhanced_features)
                     
                     # Update video status
                     await conn.execute(
@@ -316,6 +322,29 @@ class DatabaseManager:
                 embedding.keyframe_id, embedding.model_name,
                 embedding.dimension, embedding_bytes, norm
             )
+    
+    async def _store_enhanced_features(self, conn, video_id: str, features: Dict):
+        """Store enhanced features for keyframes"""
+        for shot_index, feature_data in features.items():
+            shot_id = await conn.fetchval(
+                "SELECT shot_id FROM shots WHERE video_id = $1 AND shot_index = $2",
+                video_id, shot_index
+            )
+            
+            if not shot_id:
+                logger.warning(f"No shot found for video {video_id}, shot_index {shot_index}")
+                continue
+            
+            # Assuming feature_data is a dictionary with feature_name: value pairs
+            for feature_name, value in feature_data.items():
+                await conn.execute("""
+                    INSERT INTO keyframe_features (keyframe_id, feature_name, feature_value)
+                    VALUES ($1, $2, $3)
+                    ON CONFLICT (keyframe_id, feature_name) DO UPDATE SET
+                        feature_value = EXCLUDED.feature_value
+                """,
+                    f"{video_id}_keyframe_{shot_index}", feature_name, value
+                )
     
     async def _cache_embeddings(self, video_id: str, embeddings: List[Embedding]):
         """Cache embeddings in Redis for fast retrieval"""
